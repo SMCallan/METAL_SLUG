@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Metal Slug Lite - Animated Enemy</title>
+    <title>Metal Slug Lite - Directional Enemies</title>
     <style>
         body {
             font-family: 'Press Start 2P', cursive, sans-serif;
@@ -14,14 +14,14 @@
             align-items: center;
             justify-content: center;
             margin: 0;
-            padding-top: 10px; /* Reduced padding */
+            padding-top: 10px;
             height: 100vh;
             overflow: hidden;
         }
         h1 {
             color: #FFD700;
             text-shadow: 2px 2px #FF0000, -2px -2px #0000FF;
-            font-size: 1.6em; /* Slightly smaller */
+            font-size: 1.6em;
             margin-bottom: 10px;
         }
         canvas {
@@ -32,7 +32,7 @@
         }
         .controls-info {
             margin-top: 10px;
-            font-size: 0.8em; /* Slightly smaller */
+            font-size: 0.8em;
             color: #ccc;
             background-color: rgba(0,0,0,0.5);
             padding: 6px 10px;
@@ -41,13 +41,12 @@
          #loadingMessage {
             color: yellow;
             font-style: italic;
-            border: 1px solid transparent; /* Hide debug border */
         }
         @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
     </style>
 </head>
 <body>
-    <h1>Metal Slug Lite (Animated Enemy)</h1>
+    <h1>Metal Slug Lite (Directional Enemies)</h1>
     <canvas id="gameCanvas"></canvas>
     <div class="controls-info">
         <p>Controls: Arrow Keys (Move/Jump), Spacebar (Shoot)</p>
@@ -67,7 +66,7 @@
             );
         }
 
-        // --- Asset Manager (no structural changes, just ensure it's robust) ---
+        // --- Asset Manager ---
         const assetManager = {
             images: {}, totalAssetsToLoad: 0, loadedAssets: 0, _promises: [],
             loadImage(name, src) {
@@ -120,7 +119,7 @@
             }
         };
 
-        // --- Input Handler (no change) ---
+        // --- Input Handler ---
         class InputHandler { /* ... (no change) ... */ 
             constructor() {
                 this.keys = new Set();
@@ -141,7 +140,7 @@
             consumeShoot() { return this.keys.has('Space'); }
         }
 
-        // --- Projectile Class (no change) ---
+        // --- Projectile Class ---
         class Projectile { /* ... (no change) ... */ 
             constructor(x, y, direction, gameWidth) {
                 this.x = x; this.y = y; this.direction = direction; this.gameWidth = gameWidth;
@@ -156,52 +155,60 @@
             getRect() { return { x: this.x, y: this.y, width: this.width, height: this.height }; }
         }
 
-        // --- Enemy Class (MODIFIED) ---
+        // --- Enemy Class (MODIFIED FOR DIRECTIONAL SPRITES) ---
         class Enemy {
              constructor(x, y, gameWidth) {
                 this.gameWidth = gameWidth;
                 // IMPORTANT: Adjust these width/height to your enemy sprite's desired size
-                this.width = 40;  // Example: Adjust to fit Leftenemy sprites
-                this.height = 60; // Example: Adjust to fit Leftenemy sprites
+                this.width = 40;  // Example: Adjust to fit enemy sprites
+                this.height = 60; // Example: Adjust to fit enemy sprites
                 this.x = x;
-                this.y = y; // Adjust y to be ground-based if needed, assuming y is top-left.
-                                        // If y from spawnEnemy is already ground level for rect, then this.y = y;
+                this.y = y; // Correctly assigned from spawnEnemy
                 
                 this.fallbackColor = '#F44336';
-                this.speed = (Math.random() * 1.0 + 0.5); // Slightly slower base for animation visibility
+                this.speed = (Math.random() * 1.0 + 0.5); 
                 this.active = true;
-                // Assuming Leftenemy sprites are facing right.
-                // If spawned on left, direction is 1 (moves right).
-                // If spawned on right, direction is -1 (moves left, will look like moonwalking with these sprites)
+                
+                // Determine direction based on spawn side.
+                // If x is on left half, it moves right (direction = 1).
+                // If x is on right half, it moves left (direction = -1).
                 this.direction = (x < gameWidth / 2) ? 1 : -1; 
                 
                 // Animation properties
-                this.walkFrames = [
-                    assetManager.getImage('enemyWalk1'),
-                    assetManager.getImage('enemyWalk2')
-                ];
-                this.explosionSprite = assetManager.getImage('enemyExplosion');
+                this.walkFrames = [];
+                this.explosionSprite = null;
+
+                if (this.direction === 1) { // Moving Right (spawned on left, uses leftenemy sprites which face right)
+                    this.walkFrames = [
+                        assetManager.getImage('leftEnemyWalk1'),
+                        assetManager.getImage('leftEnemyWalk2')
+                    ];
+                    this.explosionSprite = assetManager.getImage('leftEnemyExplosion');
+                } else { // Moving Left (spawned on right, uses rightenemy sprites which face left)
+                    this.walkFrames = [
+                        assetManager.getImage('rightEnemyWalk1'),
+                        assetManager.getImage('rightEnemyWalk2')
+                    ];
+                    this.explosionSprite = assetManager.getImage('rightEnemyExplosion');
+                }
+
                 this.currentWalkFrameIndex = 0;
                 this.pixelsMovedSinceFrameChange = 0;
-                // Adjust this threshold: lower means faster animation, higher means slower.
-                this.animationPixelThreshold = 15; // Change walk frame every 15 pixels moved
+                this.animationPixelThreshold = 15;
 
                 this.isExploding = false;
-                this.explosionDuration = 300; // ms for explosion sprite to show
+                this.explosionDuration = 300; 
                 this.explosionTimer = 0;
 
                 this._spriteMissingLogged = {walk: false, explosion: false};
             }
 
-            update(deltaTime) { // deltaTime is crucial here
+            update(deltaTime) { 
                 if (this.isExploding) {
                     this.explosionTimer -= deltaTime;
-                    if (this.explosionTimer <= 0) {
-                        this.active = false; // Enemy is removed after explosion finishes
-                    }
-                    return; // No movement or other logic if exploding
+                    if (this.explosionTimer <= 0) this.active = false; 
+                    return; 
                 }
-
                 if (!this.active) return;
 
                 const oldX = this.x;
@@ -213,9 +220,6 @@
                     this.currentWalkFrameIndex = (this.currentWalkFrameIndex + 1) % this.walkFrames.length;
                     this.pixelsMovedSinceFrameChange = 0;
                 }
-
-                // Despawn if walked off-screen (and not already exploding)
-                // Add this.width to condition for spawning off screen from left and right.
                 if ( (this.direction === -1 && this.x < 0 - this.width) || 
                      (this.direction === 1 && this.x > this.gameWidth + this.width) ) {
                     this.active = false;
@@ -223,7 +227,7 @@
             }
 
             draw(ctx) {
-                if (!this.active && !this.isExploding) return; // Don't draw if completely inactive
+                if (!this.active && !this.isExploding) return;
 
                 let currentSpriteToDraw = null;
                 let spriteType = '';
@@ -231,7 +235,7 @@
                 if (this.isExploding) {
                     currentSpriteToDraw = this.explosionSprite;
                     spriteType = 'explosion';
-                } else if (this.active) {
+                } else if (this.active && this.walkFrames.length > 0) { // Check if walkFrames were loaded
                     currentSpriteToDraw = this.walkFrames[this.currentWalkFrameIndex];
                     spriteType = 'walk';
                 }
@@ -239,32 +243,26 @@
                 if (currentSpriteToDraw && currentSpriteToDraw.complete && currentSpriteToDraw.naturalHeight !== 0) {
                     ctx.drawImage(currentSpriteToDraw, this.x, this.y, this.width, this.height);
                 } else {
-                    // Fallback drawing
                     ctx.fillStyle = this.isExploding ? 'orange' : this.fallbackColor;
                     ctx.fillRect(this.x, this.y, this.width, this.height);
                     if (spriteType && !this._spriteMissingLogged[spriteType]) {
-                        console.warn(`Enemy:draw - Fallback for ${spriteType} sprite. Details:`, currentSpriteToDraw);
+                        console.warn(`Enemy:draw - Fallback for ${spriteType} sprite (direction: ${this.direction}). Details:`, currentSpriteToDraw);
                         this._spriteMissingLogged[spriteType] = true;
                     }
                 }
             }
 
-            getRect() {
-                return { x: this.x, y: this.y, width: this.width, height: this.height };
-            }
+            getRect() { return { x: this.x, y: this.y, width: this.width, height: this.height }; }
 
             takeDamage() {
-                if (this.isExploding || !this.active) return; // Already exploding or inactive, no further damage
-
-                // For these enemies, one hit causes explosion
+                if (this.isExploding || !this.active) return;
                 this.isExploding = true;
                 this.explosionTimer = this.explosionDuration;
-                // Note: this.active is not set to false here. It's set after explosionTimer runs out in update().
             }
         }
         
-        // --- Player Class (no change from your last version) ---
-        class Player { /* ... (Copy your existing Player class here, ensure it has this.spriteRight/Left) ... */ 
+        // --- Player Class ---
+        class Player { /* ... (no change from your last version) ... */ 
             constructor(gameWidth, gameHeight) {
                 console.log("Player:constructor - Initializing.");
                 this.gameWidth = gameWidth; this.gameHeight = gameHeight;
@@ -330,7 +328,7 @@
             }
         }
 
-        // --- Game Class (MODIFIED to pass deltaTime to enemy update) ---
+        // --- Game Class ---
         class Game {
             constructor(canvasId) { /* ... (no change to constructor) ... */ 
                 console.log("Game:constructor - Initializing.");
@@ -346,41 +344,33 @@
             }
 
             spawnEnemy() {
-                const groundLevelY = this.canvas.height - 10; // Bottom of the "ground platform"
-                // For enemy height of 60 (as per new Enemy class example), its Y to sit on ground:
+                const groundLevelY = this.canvas.height - 10; 
                 const enemyHeight = 60; // Should match Enemy.height
                 const enemyY = groundLevelY - enemyHeight;
 
                 let spawnX;
-                // For this example, always spawn from left for the new sprites
-                // Later you can add more complex spawning
-                if (Math.random() < 0.7) { // 70% chance spawn left
-                     spawnX = 0 - (Math.random() * 50 + 40); // Spawn off-screen left (enemy width is 40)
-                } else { // 30% chance spawn right
+                if (Math.random() < 0.5) { // 50% chance spawn left
+                     spawnX = 0 - (Math.random() * 50 + this.enemies[0]?.width || 40); // Spawn off-screen left, use enemy width
+                } else { // 50% chance spawn right
                      spawnX = this.canvas.width + Math.random() * 50; // Spawn off-screen right
                 }
                 this.enemies.push(new Enemy(spawnX, enemyY, this.canvas.width));
             }
             
-            update(deltaTime) { // deltaTime is passed in
+            update(deltaTime) { 
                 if (this.isGameOver || !this.player) return;
                 this.player.update(this.inputHandler, deltaTime);
-                
-                // MODIFICATION: Pass deltaTime to enemy update
                 this.enemies.forEach(enemy => enemy.update(deltaTime));
 
-                // Projectile vs Enemy collision
                 this.player.projectiles.forEach(proj => {
                     this.enemies.forEach(enemy => {
-                        // Check active for both, and enemy not already exploding
                         if (proj.active && enemy.active && !enemy.isExploding && AABBCollision(proj.getRect(), enemy.getRect())) {
                             proj.active = false; 
-                            enemy.takeDamage(); // This will set enemy.isExploding = true
-                            this.score += 50; // Score for hitting, more if it "dies" (optional)
+                            enemy.takeDamage(); 
+                            this.score += 50; 
                         }
                     });
                 });
-                // Player vs Enemy collision
                 this.enemies.forEach(enemy => {
                     if (enemy.active && !enemy.isExploding && AABBCollision(this.player.getRect(), enemy.getRect())) {
                         if (this.player.takeDamage() && this.player.health <= 0) this.gameOver();
@@ -388,14 +378,13 @@
                 });
 
                 this.player.projectiles = this.player.projectiles.filter(p => p.active);
-                // Enemies are removed if !active (after explosion or walking off screen)
                 this.enemies = this.enemies.filter(e => e.active); 
 
                 this.enemySpawnTimer += deltaTime;
                 if (this.enemySpawnTimer >= this.enemySpawnInterval) {
-                    if (this.enemies.length < 6) this.spawnEnemy(); // Max enemies
+                    if (this.enemies.length < 6) this.spawnEnemy(); 
                     this.enemySpawnTimer = 0;
-                    if (this.enemySpawnInterval > 1000) this.enemySpawnInterval -= 25; // Increase spawn rate
+                    if (this.enemySpawnInterval > 1000) this.enemySpawnInterval -= 25; 
                 }
             }
 
@@ -406,7 +395,7 @@
                 this.ctx.fillText(`Health: ${"❤️".repeat(this.player.health)}`, this.canvas.width - 20, 30);
             }
             
-            draw() { /* ... (no change for general drawing, but enemies will draw themselves differently) ... */
+            draw() { /* ... (no change) ... */
                 this.ctx.fillStyle = '#2c3e50'; this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
                 this.ctx.fillStyle = '#7f8c8d'; this.ctx.fillRect(0, this.canvas.height - 10, this.canvas.width, 10);
                 if (this.player) this.player.draw(this.ctx);
@@ -447,10 +436,17 @@
                 // Player Sprites
                 assetManager.loadImage('playerLeft', 'MGSpriteleft.png');
                 assetManager.loadImage('playerRight', 'MGSpriteright.png');
-                // NEW Enemy Sprites
-                assetManager.loadImage('enemyWalk1', 'leftenemy1.png');
-                assetManager.loadImage('enemyWalk2', 'leftenemy2.png');
-                assetManager.loadImage('enemyExplosion', 'leftenemy3.png');
+                
+                // Enemy Sprites - Left Facing (for enemies moving right)
+                assetManager.loadImage('leftEnemyWalk1', 'leftenemy1.png'); // Assuming leftenemyX.png sprites face right
+                assetManager.loadImage('leftEnemyWalk2', 'leftenemy2.png');
+                assetManager.loadImage('leftEnemyExplosion', 'leftenemy3.png');
+
+                // Enemy Sprites - Right Facing (for enemies moving left)
+                assetManager.loadImage('rightEnemyWalk1', 'rightenemy1.png'); // Assuming rightenemyX.png sprites face left
+                assetManager.loadImage('rightEnemyWalk2', 'rightenemy2.png');
+                assetManager.loadImage('rightEnemyExplosion', 'rightenemy3.png');
+
 
                 try {
                     await assetManager.loadAll();
@@ -466,7 +462,7 @@
                 this.isGameOver = false; this.score = 0;
                 this.enemies = []; this.enemySpawnTimer = 0;
                 this.enemySpawnInterval = 2500;
-                this.spawnEnemy(); // Initial enemy
+                this.spawnEnemy(); 
 
                 if (this.animationFrameId) cancelAnimationFrame(this.animationFrameId);
                 this.lastTime = 0;
