@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Metal Snails</title>
+    <title>Metal Slug Lite - Background & Larger Sprites</title>
     <style>
         body {
             font-family: 'Press Start 2P', cursive, sans-serif;
@@ -26,7 +26,8 @@
         }
         canvas {
             border: 4px solid #fff;
-            background-color: #000;
+            /* Background color for canvas is now less important as image will cover it */
+            background-color: #000; 
             display: block;
             box-shadow: 0 0 15px #fff;
         }
@@ -46,7 +47,7 @@
     </style>
 </head>
 <body>
-    <h1>Metal Snails</h1>
+    <h1>Metal Slug Lite (Background & Larger Sprites)</h1>
     <canvas id="gameCanvas"></canvas>
     <div class="controls-info">
         <p>Controls: Arrow Keys (Move/Jump), Spacebar (Shoot)</p>
@@ -155,55 +156,42 @@
             getRect() { return { x: this.x, y: this.y, width: this.width, height: this.height }; }
         }
 
-        // --- Enemy Class (MODIFIED FOR DIRECTIONAL SPRITES) ---
+        // --- Enemy Class (MODIFIED FOR SIZE) ---
         class Enemy {
              constructor(x, y, gameWidth) {
                 this.gameWidth = gameWidth;
-                // IMPORTANT: Adjust these width/height to your enemy sprite's desired size
-                this.width = 40;  // Example: Adjust to fit enemy sprites
-                this.height = 60; // Example: Adjust to fit enemy sprites
+                this.width = 50;  // INCREASED SIZE
+                this.height = 75; // INCREASED SIZE
                 this.x = x;
-                this.y = y; // Correctly assigned from spawnEnemy
+                this.y = y; 
                 
                 this.fallbackColor = '#F44336';
                 this.speed = (Math.random() * 1.0 + 0.5); 
                 this.active = true;
-                
-                // Determine direction based on spawn side.
-                // If x is on left half, it moves right (direction = 1).
-                // If x is on right half, it moves left (direction = -1).
                 this.direction = (x < gameWidth / 2) ? 1 : -1; 
                 
-                // Animation properties
                 this.walkFrames = [];
                 this.explosionSprite = null;
 
-                if (this.direction === 1) { // Moving Right (spawned on left, uses leftenemy sprites which face right)
-                    this.walkFrames = [
-                        assetManager.getImage('leftEnemyWalk1'),
-                        assetManager.getImage('leftEnemyWalk2')
-                    ];
+                if (this.direction === 1) { 
+                    this.walkFrames = [ assetManager.getImage('leftEnemyWalk1'), assetManager.getImage('leftEnemyWalk2') ];
                     this.explosionSprite = assetManager.getImage('leftEnemyExplosion');
-                } else { // Moving Left (spawned on right, uses rightenemy sprites which face left)
-                    this.walkFrames = [
-                        assetManager.getImage('rightEnemyWalk1'),
-                        assetManager.getImage('rightEnemyWalk2')
-                    ];
+                } else { 
+                    this.walkFrames = [ assetManager.getImage('rightEnemyWalk1'), assetManager.getImage('rightEnemyWalk2') ];
                     this.explosionSprite = assetManager.getImage('rightEnemyExplosion');
                 }
 
                 this.currentWalkFrameIndex = 0;
                 this.pixelsMovedSinceFrameChange = 0;
-                this.animationPixelThreshold = 15;
+                this.animationPixelThreshold = 20; // Slightly increased due to larger size/slower perceived speed
 
                 this.isExploding = false;
                 this.explosionDuration = 300; 
                 this.explosionTimer = 0;
-
                 this._spriteMissingLogged = {walk: false, explosion: false};
             }
 
-            update(deltaTime) { 
+            update(deltaTime) { /* ... (no change to logic) ... */ 
                 if (this.isExploding) {
                     this.explosionTimer -= deltaTime;
                     if (this.explosionTimer <= 0) this.active = false; 
@@ -225,21 +213,17 @@
                     this.active = false;
                 }
             }
-
-            draw(ctx) {
+            draw(ctx) { /* ... (no change to logic) ... */ 
                 if (!this.active && !this.isExploding) return;
-
                 let currentSpriteToDraw = null;
                 let spriteType = '';
-
                 if (this.isExploding) {
                     currentSpriteToDraw = this.explosionSprite;
                     spriteType = 'explosion';
-                } else if (this.active && this.walkFrames.length > 0) { // Check if walkFrames were loaded
+                } else if (this.active && this.walkFrames.length > 0) { 
                     currentSpriteToDraw = this.walkFrames[this.currentWalkFrameIndex];
                     spriteType = 'walk';
                 }
-
                 if (currentSpriteToDraw && currentSpriteToDraw.complete && currentSpriteToDraw.naturalHeight !== 0) {
                     ctx.drawImage(currentSpriteToDraw, this.x, this.y, this.width, this.height);
                 } else {
@@ -251,26 +235,30 @@
                     }
                 }
             }
-
             getRect() { return { x: this.x, y: this.y, width: this.width, height: this.height }; }
-
-            takeDamage() {
+            takeDamage() { /* ... (no change to logic) ... */ 
                 if (this.isExploding || !this.active) return;
                 this.isExploding = true;
                 this.explosionTimer = this.explosionDuration;
             }
         }
         
-        // --- Player Class ---
-        class Player { /* ... (no change from your last version) ... */ 
+        // --- Player Class (MODIFIED FOR SIZE) ---
+        class Player { 
             constructor(gameWidth, gameHeight) {
                 console.log("Player:constructor - Initializing.");
                 this.gameWidth = gameWidth; this.gameHeight = gameHeight;
-                this.width = 48; this.height = 78; 
-                this.x = 50; this.y = gameHeight - this.height - 10;
+                this.width = 60;   // INCREASED SIZE
+                this.height = 98;  // INCREASED SIZE
+                this.x = 50; 
+                // Recalculate y to stand on ground with new height
+                this.y = gameHeight - this.height - 10; // 10 is ground platform thickness
+                
                 this.fallbackColor = '#4CAF50';
-                this.speed = 4.5; this.projectiles = [];
-                this.velocityY = 0; this.gravity = 0.7; this.jumpStrength = -16;
+                this.speed = 5; // Slightly increased speed to feel good with larger size
+                this.projectiles = [];
+                this.velocityY = 0; this.gravity = 0.75; // Slightly increased gravity
+                this.jumpStrength = -17; // Slightly stronger jump
                 this.onGround = true; this.facingDirection = 'right';
                 this.shootCooldown = 0; this.shootCooldownTime = 180;
                 this.health = 3; this.isInvincible = false;
@@ -280,12 +268,12 @@
                 this.spriteRight = assetManager.getImage('playerRight');
                 this.spriteLeft = assetManager.getImage('playerLeft');
             }
-            update(input, deltaTime) {
+            update(input, deltaTime) { /* ... (no change to logic other than y position if ground calc changes) ... */ 
                 if (input.isKeyPressed('ArrowLeft')) { this.x -= this.speed; this.facingDirection = 'left'; }
                 if (input.isKeyPressed('ArrowRight')) { this.x += this.speed; this.facingDirection = 'right'; }
                 if (input.isKeyPressed('ArrowUp') && this.onGround) { this.velocityY = this.jumpStrength; this.onGround = false; }
                 this.y += this.velocityY; this.velocityY += this.gravity;
-                const groundLevel = this.gameHeight - this.height - 10;
+                const groundLevel = this.gameHeight - this.height - 10; // Ensure this uses current gameHeight & player height
                 if (this.y >= groundLevel) { this.y = groundLevel; this.velocityY = 0; this.onGround = true; }
                 if (this.x < 0) this.x = 0;
                 if (this.x + this.width > this.gameWidth) this.x = this.gameWidth - this.width;
@@ -298,12 +286,12 @@
                     if (this.invincibilityTimer <= 0) this.isInvincible = false;
                 }
             }
-            shoot() {
+            shoot() { /* ... (no change to logic) ... */ 
                 const projX = this.facingDirection === 'right' ? this.x + this.width : this.x - 10;
                 const projY = this.y + this.height / 2 - 2.5;
                 this.projectiles.push(new Projectile(projX, projY, this.facingDirection, this.gameWidth));
             }
-            draw(ctx) {
+            draw(ctx) { /* ... (no change to logic) ... */ 
                 const currentSprite = this.facingDirection === 'right' ? this.spriteRight : this.spriteLeft;
                 if (this.isInvincible) ctx.globalAlpha = (Math.floor(Date.now() / 100) % 2 === 0) ? 0.6 : 1.0;
                 let drewSprite = false;
@@ -321,53 +309,56 @@
                 ctx.globalAlpha = 1.0; this.projectiles.forEach(p => p.draw(ctx));
             }
             getRect() { return { x: this.x, y: this.y, width: this.width, height: this.height }; }
-            takeDamage() {
+            takeDamage() { /* ... (no change to logic) ... */ 
                 if (this.isInvincible) return false; this.health--;
                 if (this.health > 0) { this.isInvincible = true; this.invincibilityTimer = this.invincibilityDuration; }
                 return true;
             }
         }
 
-        // --- Game Class ---
+        // --- Game Class (MODIFIED FOR CANVAS SIZE & BACKGROUND & ENEMY HEIGHT IN SPAWN) ---
         class Game {
-            constructor(canvasId) { /* ... (no change to constructor) ... */ 
+            constructor(canvasId) { 
                 console.log("Game:constructor - Initializing.");
                 this.canvas = document.getElementById(canvasId);
                 this.ctx = this.canvas.getContext('2d');
                 if (!this.canvas || !this.ctx) { alert("Error: Canvas not supported or found. Game cannot start."); throw new Error("Canvas init failed"); }
-                this.canvas.width = 800; this.canvas.height = 450;
+                
+                // INCREASED CANVAS SIZE
+                this.canvas.width = 960; 
+                this.canvas.height = 540;
+
                 this.inputHandler = new InputHandler();
                 this.player = null; this.enemies = []; this.score = 0; this.lastTime = 0;
                 this.animationFrameId = null; this.isGameOver = false;
-                this.enemySpawnTimer = 0; this.enemySpawnInterval = 2500; //ms
+                this.enemySpawnTimer = 0; this.enemySpawnInterval = 2500; 
                 this.gameLoop = this.gameLoop.bind(this);
+                this.backgroundSprite = null; // To hold the loaded background image
             }
 
             spawnEnemy() {
                 const groundLevelY = this.canvas.height - 10; 
-                const enemyHeight = 60; // Should match Enemy.height
+                const enemyHeight = 75; // MUST MATCH ENEMY CLASS HEIGHT
                 const enemyY = groundLevelY - enemyHeight;
 
                 let spawnX;
-                if (Math.random() < 0.5) { // 50% chance spawn left
-                     spawnX = 0 - (Math.random() * 50 + this.enemies[0]?.width || 40); // Spawn off-screen left, use enemy width
-                } else { // 50% chance spawn right
-                     spawnX = this.canvas.width + Math.random() * 50; // Spawn off-screen right
+                const enemyWidth = 50; // MUST MATCH ENEMY CLASS WIDTH (used for off-screen calc)
+                if (Math.random() < 0.5) { 
+                     spawnX = 0 - (Math.random() * 50 + enemyWidth); 
+                } else { 
+                     spawnX = this.canvas.width + Math.random() * 50; 
                 }
                 this.enemies.push(new Enemy(spawnX, enemyY, this.canvas.width));
             }
             
-            update(deltaTime) { 
+            update(deltaTime) { /* ... (no change to logic) ... */ 
                 if (this.isGameOver || !this.player) return;
                 this.player.update(this.inputHandler, deltaTime);
                 this.enemies.forEach(enemy => enemy.update(deltaTime));
-
                 this.player.projectiles.forEach(proj => {
                     this.enemies.forEach(enemy => {
                         if (proj.active && enemy.active && !enemy.isExploding && AABBCollision(proj.getRect(), enemy.getRect())) {
-                            proj.active = false; 
-                            enemy.takeDamage(); 
-                            this.score += 50; 
+                            proj.active = false; enemy.takeDamage(); this.score += 50; 
                         }
                     });
                 });
@@ -376,13 +367,11 @@
                         if (this.player.takeDamage() && this.player.health <= 0) this.gameOver();
                     }
                 });
-
                 this.player.projectiles = this.player.projectiles.filter(p => p.active);
                 this.enemies = this.enemies.filter(e => e.active); 
-
                 this.enemySpawnTimer += deltaTime;
                 if (this.enemySpawnTimer >= this.enemySpawnInterval) {
-                    if (this.enemies.length < 6) this.spawnEnemy(); 
+                    if (this.enemies.length < 7) this.spawnEnemy(); // Adjusted max enemies for larger canvas
                     this.enemySpawnTimer = 0;
                     if (this.enemySpawnInterval > 1000) this.enemySpawnInterval -= 25; 
                 }
@@ -395,9 +384,21 @@
                 this.ctx.fillText(`Health: ${"❤️".repeat(this.player.health)}`, this.canvas.width - 20, 30);
             }
             
-            draw() { /* ... (no change) ... */
-                this.ctx.fillStyle = '#2c3e50'; this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-                this.ctx.fillStyle = '#7f8c8d'; this.ctx.fillRect(0, this.canvas.height - 10, this.canvas.width, 10);
+            draw() {
+                // 1. Draw Background
+                if (this.backgroundSprite && this.backgroundSprite.complete && this.backgroundSprite.naturalHeight !== 0) {
+                    this.ctx.drawImage(this.backgroundSprite, 0, 0, this.canvas.width, this.canvas.height);
+                } else {
+                    // Fallback clear if background fails to load
+                    this.ctx.fillStyle = '#2c3e50'; 
+                    this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+                }
+
+                // 2. Draw Ground (optional if background includes it, but good for distinct platform line)
+                this.ctx.fillStyle = '#7f8c8d'; 
+                this.ctx.fillRect(0, this.canvas.height - 10, this.canvas.width, 10);
+                
+                // 3. Draw Game Elements
                 if (this.player) this.player.draw(this.ctx);
                 else { 
                     this.ctx.fillStyle = 'white'; this.ctx.font = '20px "Press Start 2P"';
@@ -405,6 +406,8 @@
                     this.ctx.fillText('Initializing Player...', this.canvas.width / 2, this.canvas.height / 2);
                 }
                 this.enemies.forEach(enemy => enemy.draw(this.ctx));
+                
+                // 4. Draw UI
                 this.ctx.fillStyle = 'white'; this.ctx.font = '20px "Press Start 2P"';
                 this.ctx.textAlign = 'left'; this.ctx.fillText(`Score: ${this.score}`, 20, 30);
                 this.drawPlayerHealth();
@@ -433,29 +436,30 @@
 
             async initAndStart() {
                 console.log("Game:initAndStart - Starting asset loading phase.");
-                // Player Sprites
                 assetManager.loadImage('playerLeft', 'MGSpriteleft.png');
                 assetManager.loadImage('playerRight', 'MGSpriteright.png');
-                
-                // Enemy Sprites - Left Facing (for enemies moving right)
-                assetManager.loadImage('leftEnemyWalk1', 'leftenemy1.png'); // Assuming leftenemyX.png sprites face right
+                assetManager.loadImage('leftEnemyWalk1', 'leftenemy1.png');
                 assetManager.loadImage('leftEnemyWalk2', 'leftenemy2.png');
                 assetManager.loadImage('leftEnemyExplosion', 'leftenemy3.png');
-
-                // Enemy Sprites - Right Facing (for enemies moving left)
-                assetManager.loadImage('rightEnemyWalk1', 'rightenemy1.png'); // Assuming rightenemyX.png sprites face left
+                assetManager.loadImage('rightEnemyWalk1', 'rightenemy1.png');
                 assetManager.loadImage('rightEnemyWalk2', 'rightenemy2.png');
                 assetManager.loadImage('rightEnemyExplosion', 'rightenemy3.png');
-
+                // LOAD BACKGROUND IMAGE
+                assetManager.loadImage('background', 'SettingSun.png');
 
                 try {
                     await assetManager.loadAll();
-                    console.log("Game:initAndStart - Asset loading complete. Initializing player.");
+                    console.log("Game:initAndStart - Asset loading complete.");
+                    // Store loaded background
+                    this.backgroundSprite = assetManager.getImage('background');
+                    if (!this.backgroundSprite) console.warn("Background sprite not loaded successfully!");
+
                 } catch (err) {
                     console.error("Game:initAndStart - Error during assetManager.loadAll():", err);
                     return; 
                 }
                 
+                // Pass the new canvas dimensions to the player
                 this.player = new Player(this.canvas.width, this.canvas.height);
                 console.log("Game:initAndStart - Player initialized.");
 
