@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Metal Slug Lite - Single File</title>
+    <style>
+        body {
+            font-family: 'Press Start 2P', cursive, sans-serif;
+            background-color: #1a1a1a; /* Darker background */
+            color: #fff;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            margin: 0;
+            padding-top: 20px;
+            height: 100vh;
+            overflow: hidden; /* Hide scrollbars if canvas is too big for viewport */
+        }
+
+        h1 {
+            color: #FFD700; /* Gold */
+            text-shadow: 2px 2px #FF0000, -2px -2px #0000FF; /* Retro shadow */
+            font-size: 1.8em;
+            margin-bottom: 15px;
+        }
+
+        canvas {
+            border: 4px solid #fff;
+            background-color: #000; /* Black game screen */
+            display: block;
+            box-shadow: 0 0 15px #fff; /* Glow effect */
+        }
+
+        .controls-info {
+            margin-top: 15px;
+            font-size: 0.9em;
+            color: #ccc;
+            background-color: rgba(0,0,0,0.5);
+            padding: 8px 12px;
+            border-radius: 5px;
+        }
+
+        /* Import the pixel font */
+        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+    </style>
+</head>
+<body>
+    <h1>Metal Slug Lite (Arcade)</h1>
+    <canvas id="gameCanvas"></canvas>
+    <div class="controls-info">
+        <p>Controls: Arrow Keys (Move/Jump), Spacebar (Shoot)</p>
+    </div>
+
+    <script>
+        // --- Utility Functions ---
+        function AABBCollision(rect1, rect2) {
+            return (
+                rect1.x < rect2.x + rect2.width &&
+                rect1.x + rect1.width > rect2.x &&
+                rect1.y < rect2.y + rect2.height &&
+                rect1.y + rect1.height > rect2.y
+            );
+        }
+
+        // --- Input Handler ---
+        class InputHandler {
+            constructor() {
+                this.keys = new Set();
+                this.shootPressedThisFrame = false; // More robust for single press
+
+                window.addEventListener('keydown', (e) => {
+                    if (['ArrowLeft', 'ArrowRight', 'ArrowUp', ' '].includes(e.key)) {
+                        e.preventDefault();
+                        const keyName = e.key === ' ' ? 'Space' : e.key;
+                        this.keys.add(keyName);
+                        if (keyName === 'Space' && !this.shootPressedThisFrame) { // Allow holding for auto, but this ensures one press
+                             // For single shot per press, logic is in player's consumeShoot
+                        }
+                    }
+                });
+
+                window.addEventListener('keyup', (e) => {
+                    if (['ArrowLeft', 'ArrowRight', 'ArrowUp', ' '].includes(e.key)) {
+                        e.preventDefault();
+                        const keyName = e.key === ' ' ? 'Space' : e.key;
+                        this.keys.delete(keyName);
+                        if (keyName === 'Space') {
+                            this.shootPressedThisFrame = false; // Reset for next actual press
+                        }
+                    }
+                });
+            }
+
+            isKeyPressed(key) {
+                return this.keys.has(key);
+            }
+
+            // Call this to check if shoot was pressed and consume it
+            consumeShoot() {
+                if (this.keys.has('Space') && !this.shootPressedThisFrame) {
+                    this.shootPressedThisFrame = true; // Mark as consumed for this continuous press
+                                                      // will be reset on keyup
+                    return true;
+                }
+                // if you want auto-fire while holding, change logic here
+                // e.g. return this.keys.has('Space')
+                // For now, it's closer to one shot per press action, reset on keyup
+                // To make it tap-to-shoot (not hold), we need more state.
+                // The current `shootCooldown` in player handles fire rate.
+                // This consumeShoot is now more about "is the button down"
+                return this.keys.has('Space'); // Changed to allow holding for fire rate control
+            }
+        }
+
+        // --- Projectile Class ---
+        class Projectile {
+            constructor(x, y, direction, gameWidth) {
+                this.x = x;
+                this.y = y;
+                this.direction = direction;
+                this.gameWidth = gameWidth;
+                this.width = 10; // Slightly bigger bullet
+                this.height = 5;
+                this.speed = 9;
+                this.color = '#FFEB3B'; // Bright yellow
+                this.active = true;
+            }
+
+            update() {
+                if (this.direction === 'right') {
+                    this.x += this.speed;
+                } else {
+                    this.x -= this.speed;
+                }
+                if (this.x < -this.width || this.x > this.gameWidth) {
+                    this.active = false;
+                }
+            }
+
+            draw(ctx) {
+                ctx.fillStyle = this.color;
+                ctx.fillRect(this.x, this.y, this.width, this.height);
+            }
+
+            getRect() {
+              return { x: this.x, y: this.y, width: this.width, height: this.height };
+            }
+        }
+
+        // --- Enemy Class ---
+        class Enemy {
+            constructor(x, y, gameWidth) {
+                this.x = x;
+                this.y = y;
+                this.gameWidth = gameWidth;
+                this.width = 28;
+                this.height = 45;
+                this.color = '#F44336'; // Red enemy
+                this.speed = (Math.random() * 1.5 + 0.8); // Varied speed
+                this.active = true;
+                this.direction = (x > gameWidth / 2) ? -1 : 1; // Move towards center initially
+                this.health = 1; // Basic enemies die in one hit
+            }
+
+            update() {
+                this.x += this.speed * this.direction;
+                // Patrol behavior or turn if hitting edge
+                if (this.direction === -1 && this.x < 0 - this.width) {
+                    //this.direction = 1; // Option to turn back
+                    this.active = false; // Or despawn if they walk off-screen left
+                } else if (this.direction === 1 && this.x > this.gameWidth) {
+                    //this.direction = -1; // Option to turn back
+                    this.active = false; // Or despawn if they walk off-screen right
+                }
+            }
+
+            draw(ctx) {
+                ctx.fillStyle = this.color;
+                ctx.fillRect(this.x, this.y, this.width, this.height);
+                // Simple "eye" for direction
+                ctx.fillStyle = 'white';
+                const eyeX = this.direction === 'right' ? this.x + this.width - 8 : this.x + 2;
+                ctx.fillRect(eyeX, this.y + 8, 6, 6);
+            }
+
+            getRect() {
+                return { x: this.x, y: this.y, width: this.width, height: this.height };
+            }
+
+            takeDamage() {
+                this.health--;
+                if (this.health <= 0) {
+                    this.active = false;
+                }
+            }
+        }
+
+        // --- Player Class ---
+        class Player {
+            constructor(gameWidth, gameHeight) {
+                this.gameWidth = gameWidth;
+                this.gameHeight = gameHeight;
+                this.width = 32;
+                this.height = 52;
+                this.x = 50;
+                this.y = gameHeight - this.height - 10; // Start on "ground"
+                this.color = '#4CAF50'; // Green player
+                this.speed = 4.5;
+                this.projectiles = [];
+                this.velocityY = 0;
+                this.gravity = 0.7;
+                this.jumpStrength = -16;
+                this.onGround = true;
+                this.facingDirection = 'right';
+                this.shootCooldown = 0;
+                this.shootCooldownTime = 180; // ms between shots (fire rate)
+                this.health = 3; // Player has health
+                this.isInvincible = false;
+                this.invincibilityDuration = 1500; // ms
+                this.invincibilityTimer = 0;
+            }
+
+            update(input, deltaTime) {
+                // Horizontal movement
+                if (input.isKeyPressed('ArrowLeft')) {
+                    this.x -= this.speed;
+                    this.facingDirection = 'left';
+                }
+                if (input.isKeyPressed('ArrowRight')) {
+                    this.x += this.speed;
+                    this.facingDirection = 'right';
+                }
+
+                // Jumping
+                if (input.isKeyPressed('ArrowUp') && this.onGround) {
+                    this.velocityY = this.jumpStrength;
+                    this.onGround = false;
+                }
+
+                // Apply gravity
+                this.y += this.velocityY;
+                this.velocityY += this.gravity;
+
+                // Ground collision
+                const groundLevel = this.gameHeight - this.height - 10; // 10px "platform"
+                if (this.y >= groundLevel) {
+                    this.y = groundLevel;
+                    this.velocityY = 0;
+                    this.onGround = true;
+                }
+
+                // Keep player within bounds
+                if (this.x < 0) this.x = 0;
+                if (this.x + this.width > this.gameWidth) this.x = this.gameWidth - this.width;
+
+                // Shooting
+                if (this.shootCooldown > 0) {
+                    this.shootCooldown -= deltaTime;
+                }
+                if (input.consumeShoot() && this.shootCooldown <= 0) {
+                    this.shoot();
+                    this.shootCooldown = this.shootCooldownTime;
+                }
+
+                // Update projectiles
+                this.projectiles.forEach(p => p.update());
+                this.projectiles = this.projectiles.filter(p => p.active);
+
+                // Invincibility
+                if (this.isInvincible) {
+                    this.invincibilityTimer -= deltaTime;
+                    if (this.invincibilityTimer <= 0) {
+                        this.isInvincible = false;
+                    }
+                }
+            }
+
+            shoot() {
+                const projX = this.facingDirection === 'right' ? this.x + this.width : this.x - 10; // 10 is projectile width
+                const projY = this.y + this.height / 2 - 2.5; // 2.5 is half projectile height
+                this.projectiles.push(new Projectile(projX, projY, this.facingDirection, this.gameWidth));
+            }
+
+            draw(ctx) {
+                if (this.isInvincible) {
+                    // Flash effect for invincibility
+                    ctx.globalAlpha = (Math.floor(Date.now() / 100) % 2 === 0) ? 0.6 : 1.0;
+                }
+                ctx.fillStyle = this.color;
+                ctx.fillRect(this.x, this.y, this.width, this.height);
+                ctx.globalAlpha = 1.0; // Reset alpha
+
+                // Draw projectiles
+                this.projectiles.forEach(p => p.draw(ctx));
+            }
+
+            getRect() {
+                return { x: this.x, y: this.y, width: this.width, height: this.height };
+            }
+
+            takeDamage() {
+                if (this.isInvincible) return false; // No damage if invincible
+
+                this.health--;
+                if (this.health > 0) {
+                    this.isInvincible = true;
+                    this.invincibilityTimer = this.invincibilityDuration;
+                }
+                return true; // Damage taken
+            }
+        }
+
+        // --- Game Class ---
+        class Game {
+            constructor(canvasId) {
+                this.canvas = document.getElementById(canvasId);
+                if (!this.canvas) {
+                    console.error(`Canvas with id ${canvasId} not found.`);
+                    alert("Error: Canvas element not found. Game cannot start.");
+                    return;
+                }
+                this.ctx = this.canvas.getContext('2d');
+                if (!this.ctx) {
+                    console.error('Failed to get 2D rendering context.');
+                    alert("Error: Failed to get 2D rendering context. Game cannot start.");
+                    return;
+                }
+
+                this.canvas.width = 800;
+                this.canvas.height = 450; // Slightly taller for more vertical space
+
+                this.inputHandler = new InputHandler();
+                this.player = new Player(this.canvas.width, this.canvas.height);
+                this.enemies = [];
+                this.score = 0;
+                this.lastTime = 0;
+                this.animationFrameId = null;
+                this.isGameOver = false;
+
+                this.enemySpawnTimer = 0;
+                this.enemySpawnInterval = 2500; // ms
+
+                this.gameLoop = this.gameLoop.bind(this);
+            }
+
+            spawnEnemy() {
+                const groundY = this.canvas.height - 45 - 10; // enemy height 45, ground 10
+                let spawnX;
+                let direction;
+
+                if (Math.random() < 0.5) { // Spawn from left
+                    spawnX = -30 - Math.random() * 50; // Off-screen left
+                } else { // Spawn from right
+                    spawnX = this.canvas.width + Math.random() * 50; // Off-screen right
+                }
+                const newEnemy = new Enemy(spawnX, groundY, this.canvas.width);
+                this.enemies.push(newEnemy);
+            }
+
+            update(deltaTime) {
+                if (this.isGameOver) return;
+
+                this.player.update(this.inputHandler, deltaTime);
+                this.enemies.forEach(enemy => enemy.update());
+
+                // Collision: Player projectiles vs Enemies
+                this.player.projectiles.forEach(proj => {
+                    this.enemies.forEach(enemy => {
+                        if (proj.active && enemy.active && AABBCollision(proj.getRect(), enemy.getRect())) {
+                            proj.active = false;
+                            enemy.takeDamage(); // Enemy takes damage
+                            if (!enemy.active) { // If enemy died
+                                this.score += 100;
+                            }
+                        }
+                    });
+                });
+
+                // Collision: Player vs Enemies
+                this.enemies.forEach(enemy => {
+                    if (enemy.active && AABBCollision(this.player.getRect(), enemy.getRect())) {
+                        if (this.player.takeDamage()) { // If damage was actually taken (not invincible)
+                           // Optionally, add a knockback or other effect here
+                        }
+                        if (this.player.health <= 0) {
+                            this.gameOver();
+                        }
+                    }
+                });
+
+                // Remove inactive entities
+                this.player.projectiles = this.player.projectiles.filter(p => p.active);
+                this.enemies = this.enemies.filter(e => e.active);
+
+                // Enemy Spawning
+                this.enemySpawnTimer += deltaTime;
+                if (this.enemySpawnTimer >= this.enemySpawnInterval) {
+                    if (this.enemies.length < 8) { // Max 8 enemies on screen
+                       this.spawnEnemy();
+                    }
+                    this.enemySpawnTimer = 0;
+                    // Gradually decrease spawn interval to increase difficulty
+                    if (this.enemySpawnInterval > 800) this.enemySpawnInterval -= 20;
+                }
+            }
+            
+            drawPlayerHealth() {
+                this.ctx.fillStyle = 'white';
+                this.ctx.font = '18px "Press Start 2P"';
+                this.ctx.textAlign = 'right';
+                let healthText = "Health: ";
+                for(let i = 0; i < this.player.health; i++) {
+                    healthText += "❤️"; // Simple heart representation
+                }
+                this.ctx.fillText(healthText, this.canvas.width - 20, 30);
+            }
+
+            draw() {
+                if (!this.ctx) return;
+                // Clear canvas
+                this.ctx.fillStyle = '#2c3e50'; // Midnight blue background
+                this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+                // Draw "ground"
+                this.ctx.fillStyle = '#7f8c8d'; // Concrete gray ground
+                this.ctx.fillRect(0, this.canvas.height - 10, this.canvas.width, 10);
+
+                this.player.draw(this.ctx);
+                this.enemies.forEach(enemy => enemy.draw(this.ctx));
+
+                // Draw Score
+                this.ctx.fillStyle = 'white';
+                this.ctx.font = '20px "Press Start 2P"';
+                this.ctx.textAlign = 'left';
+                this.ctx.fillText(`Score: ${this.score}`, 20, 30);
+
+                // Draw Player Health
+                this.drawPlayerHealth();
+
+                if (this.isGameOver) {
+                    this.drawGameOverScreen();
+                }
+            }
+            
+            drawGameOverScreen() {
+                this.ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+                this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+                
+                this.ctx.font = '48px "Press Start 2P"';
+                this.ctx.fillStyle = '#E74C3C'; // Alizarin Red
+                this.ctx.textAlign = 'center';
+                this.ctx.fillText('GAME OVER', this.canvas.width / 2, this.canvas.height / 2 - 40);
+                
+                this.ctx.font = '24px "Press Start 2P"';
+                this.ctx.fillStyle = 'white';
+                this.ctx.fillText(`Final Score: ${this.score}`, this.canvas.width / 2, this.canvas.height / 2 + 20);
+                
+                this.ctx.font = '18px "Press Start 2P"';
+                this.ctx.fillText('Refresh to Play Again', this.canvas.width / 2, this.canvas.height / 2 + 70);
+            }
+
+            gameOver() {
+                this.isGameOver = true;
+                // No need to cancel animation frame if gameLoop checks isGameOver
+                // and stops calling update/draw logic itself.
+                // The loop will continue but only draw the game over screen.
+            }
+
+            gameLoop(timestamp) {
+                if (!this.lastTime) this.lastTime = timestamp; // Initialize lastTime on first frame
+                const deltaTime = timestamp - this.lastTime;
+                this.lastTime = timestamp;
+
+                if (!this.isGameOver) {
+                    this.update(deltaTime);
+                }
+                this.draw(); // Always draw (for game over screen)
+
+                this.animationFrameId = requestAnimationFrame(this.gameLoop);
+            }
+
+            start() {
+                if (!this.ctx || !this.canvas) { // Ensure canvas and context are valid
+                    console.error("Cannot start game: canvas or context not initialized.");
+                    return;
+                }
+                this.isGameOver = false;
+                this.score = 0;
+                this.player = new Player(this.canvas.width, this.canvas.height); // Reset player
+                this.enemies = []; // Clear enemies
+                this.enemySpawnTimer = 0;
+                this.enemySpawnInterval = 2500;
+                
+                // Initial enemy
+                this.spawnEnemy(); 
+
+                if (this.animationFrameId) {
+                    cancelAnimationFrame(this.animationFrameId);
+                }
+                this.lastTime = 0; // Reset lastTime for correct deltaTime on new start
+                this.animationFrameId = requestAnimationFrame(this.gameLoop);
+            }
+        }
+
+        // --- Initialize Game ---
+        window.addEventListener('DOMContentLoaded', () => {
+            const game = new Game('gameCanvas');
+            if (game.canvas && game.ctx) { // Only start if game object was successfully created
+                 game.start();
+            } else {
+                // Error messages already handled in Game constructor
+                const controlsInfo = document.querySelector('.controls-info');
+                if (controlsInfo) {
+                    controlsInfo.innerHTML = "<p style='color:red;'>Error: Game could not initialize. Please ensure your browser supports HTML5 Canvas and JavaScript.</p>";
+                }
+            }
+        });
+    </script>
+</body>
+</html>
