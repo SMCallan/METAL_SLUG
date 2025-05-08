@@ -146,19 +146,19 @@
             takeDamage(){ if(this.isExploding||!this.active)return; this.isExploding = true; this.explosionTimer = this.explosionDuration;}
         }
 
-        // +++ FlyingEnemy Class (NEW) +++
+        // +++ FlyingEnemy Class (NEWLY ADDED) +++
         // Represents a flying robot enemy with wave motion and animation.
         class FlyingEnemy {
             constructor(x, y, gameWidth) {
                 this.gameWidth = gameWidth;
-                this.width = 48;  // Adjust size if needed
-                this.height = 48; // Adjust size if needed
+                this.width = 48;  // Size for the flying enemy
+                this.height = 48; // Size for the flying enemy
                 this.x = x;
                 this.y = y; 
-                this.baseY = y; // Vertical center of the wave path
+                this.baseY = y; // Vertical center for the sine wave
 
-                this.fallbackColor = '#ADD8E6'; 
-                this.speed = (Math.random() * 1.5 + 1.0); // Horizontal speed
+                this.fallbackColor = '#ADD8E6'; // Different fallback color
+                this.speed = (Math.random() * 1.5 + 1.0); 
                 this.active = true; 
                 this.direction = (x < gameWidth / 2) ? 1 : -1; 
 
@@ -173,12 +173,12 @@
                 this.frameDelay = 120; // ms per animation frame
 
                 // Load appropriate sprites based on direction
-                if (this.direction === 1) { // Moving Right (uses Robo1, Robo2, etc.)
+                if (this.direction === 1) { // Moving Right (use Robo1, Robo2...)
                     this.animationFrames = [
                         assetManager.getImage('Robo1'), assetManager.getImage('Robo2'),
                         assetManager.getImage('Robo3'), assetManager.getImage('Robo4')
                     ];
-                } else { // Moving Left (uses Robo1 copy, Robo2 copy, etc.)
+                } else { // Moving Left (use Robo1 copy, Robo2 copy...)
                     this.animationFrames = [
                         assetManager.getImage('Robo1 copy'), assetManager.getImage('Robo2 copy'),
                         assetManager.getImage('Robo3 copy'), assetManager.getImage('Robo4 copy')
@@ -238,12 +238,13 @@
                 this.health--;
                 if (this.health <= 0) {
                     this.active = false; 
+                    // TODO: Trigger explosion effect/sound
                 }
             }
         }
         // +++ END FlyingEnemy Class +++
         
-        // --- Player Class (Working 2-frame walk/idle + Jump/Duck) ---
+        // --- Player Class (Working 2-frame walk/idle + Jump/Duck - UNCHANGED FROM YOUR FILE) ---
         class Player { 
             constructor(gameWidth, gameHeight) {
                 console.log("Player:constructor - Initializing.");
@@ -262,12 +263,12 @@
                 this.onGround = true; 
                 this.facingDirection = 'right';
                 this.isDucking = false; 
-                this.isMovingHorizontally = false; // Flag for walk animation trigger
+                this.isMovingHorizontally = false; 
 
                 // Walk animation state
-                this.currentWalkFrame = 0; // 0 = primary, 1 = secondary
+                this.currentWalkFrame = 0; 
                 this.walkAnimationTimer = 0;
-                this.walkAnimationDelay = 150; // ms per frame (adjust for desired speed)
+                this.walkAnimationDelay = 150; 
 
                 this.shootCooldown = 0; this.shootCooldownTime = 180; 
                 this.health = 3; 
@@ -275,7 +276,6 @@
                 this.invincibilityDuration = 1500; 
                 this.invincibilityTimer = 0;
                 
-                // Track missing sprites
                 this._spriteMissingLogged = { 
                     'MGSpriteleft': false, 'MGSpriteright': false, 
                     'MGSpriteleft2': false, 'MGSpriteright2': false, 
@@ -283,164 +283,56 @@
                     'DuckLeft': false, 'DuckRight': false 
                 };
 
-                // Load player sprites using keys matching initAndStart
-                this.spriteIdleRight = assetManager.getImage('MGSpriteright');   // Frame 1 Right (Idle/Walk)
-                this.spriteIdleLeft = assetManager.getImage('MGSpriteleft');    // Frame 1 Left (Idle/Walk)
-                this.spriteWalkRight2 = assetManager.getImage('MGSpriteright2'); // Frame 2 Walk Right
-                this.spriteWalkLeft2 = assetManager.getImage('MGSpriteleft2');   // Frame 2 Walk Left
+                this.spriteIdleRight = assetManager.getImage('MGSpriteright');   
+                this.spriteIdleLeft = assetManager.getImage('MGSpriteleft');    
+                this.spriteWalkRight2 = assetManager.getImage('MGSpriteright2'); 
+                this.spriteWalkLeft2 = assetManager.getImage('MGSpriteleft2');   
                 this.spriteJumpRight = assetManager.getImage('JumpRight');
                 this.spriteJumpLeft = assetManager.getImage('JumpLeft');
                 this.spriteDuckRight = assetManager.getImage('DuckRight');
                 this.spriteDuckLeft = assetManager.getImage('DuckLeft');
             }
 
-            // Updates player state based on input and physics.
             update(input, deltaTime) { 
                 const oldPlayerX = this.x; 
-                this.isMovingHorizontally = false; // Assume not moving until input says otherwise
-
-                // Update ducking state
+                this.isMovingHorizontally = false; 
                 this.isDucking = input.isKeyPressed('ArrowDown') && this.onGround;
-
-                // Process movement/jump input only if not ducking
                 if (!this.isDucking) {
-                    if (input.isKeyPressed('ArrowLeft')) { 
-                        this.x -= this.speed; 
-                        this.facingDirection = 'left'; 
-                        this.isMovingHorizontally = true; // Set flag for walking animation
-                    }
-                    if (input.isKeyPressed('ArrowRight')) { 
-                        this.x += this.speed; 
-                        this.facingDirection = 'right'; 
-                        this.isMovingHorizontally = true; // Set flag for walking animation
-                    }
-                    if (input.isKeyPressed('ArrowUp') && this.onGround) { 
-                        this.velocityY = this.jumpStrength; 
-                        this.onGround = false; 
-                        this.isMovingHorizontally = false; // Don't animate walk during jump start
-                    }
+                    if (input.isKeyPressed('ArrowLeft')) { this.x -= this.speed; this.facingDirection = 'left'; this.isMovingHorizontally = true; }
+                    if (input.isKeyPressed('ArrowRight')) { this.x += this.speed; this.facingDirection = 'right'; this.isMovingHorizontally = true; }
+                    if (input.isKeyPressed('ArrowUp') && this.onGround) { this.velocityY = this.jumpStrength; this.onGround = false; this.isMovingHorizontally = false; }
                 }
-                
-                this.playerMovedX = this.x - oldPlayerX; // Track movement for parallax
-
-                // Update Walk Animation Timer & Frame
+                this.playerMovedX = this.x - oldPlayerX; 
                 if (this.isMovingHorizontally && this.onGround && !this.isDucking) {
                     this.walkAnimationTimer += deltaTime;
-                    if (this.walkAnimationTimer >= this.walkAnimationDelay) {
-                        this.currentWalkFrame = 1 - this.currentWalkFrame; // Toggle frame 0/1
-                        this.walkAnimationTimer = 0; // Reset timer
-                    }
-                } else {
-                    // Reset to frame 0 if not walking, jumping, or ducking
-                    this.currentWalkFrame = 0; 
-                    this.walkAnimationTimer = 0;
-                }
-                
-                // Apply physics
-                this.y += this.velocityY; 
-                this.velocityY += this.gravity;
+                    if (this.walkAnimationTimer >= this.walkAnimationDelay) { this.currentWalkFrame = 1 - this.currentWalkFrame; this.walkAnimationTimer = 0; }
+                } else { this.currentWalkFrame = 0; this.walkAnimationTimer = 0; }
+                this.y += this.velocityY; this.velocityY += this.gravity;
                 const groundLevel = this.gameHeight - this.height - 10; 
-                if (this.y >= groundLevel) { 
-                    this.y = groundLevel; this.velocityY = 0; this.onGround = true; 
-                }
-
-                // Screen bounds check
-                if (this.x < 0) this.x = 0;
-                if (this.x + this.width > this.gameWidth) this.x = this.gameWidth - this.width;
-                
-                // Shooting
+                if (this.y >= groundLevel) { this.y = groundLevel; this.velocityY = 0; this.onGround = true; }
+                if (this.x < 0) this.x = 0; if (this.x + this.width > this.gameWidth) this.x = this.gameWidth - this.width;
                 if (this.shootCooldown > 0) this.shootCooldown -= deltaTime;
-                if (input.consumeShoot() && this.shootCooldown <= 0) { 
-                    this.shoot(); this.shootCooldown = this.shootCooldownTime; 
-                }
-                
-                // Update projectiles
-                this.projectiles.forEach(p => p.update());
-                this.projectiles = this.projectiles.filter(p => p.active);
-                
-                // Invincibility timer
-                if (this.isInvincible) {
-                    this.invincibilityTimer -= deltaTime;
-                    if (this.invincibilityTimer <= 0) this.isInvincible = false;
-                }
+                if (input.consumeShoot() && this.shootCooldown <= 0) { this.shoot(); this.shootCooldown = this.shootCooldownTime; }
+                this.projectiles.forEach(p => p.update()); this.projectiles = this.projectiles.filter(p => p.active);
+                if (this.isInvincible) { this.invincibilityTimer -= deltaTime; if (this.invincibilityTimer <= 0) this.isInvincible = false; }
             }
-
-            // Creates a new projectile.
             shoot() { 
                 const projX = this.facingDirection === 'right' ? this.x + this.width : this.x - 10; 
                 let projY = this.y + this.height / 2 - 2.5; 
                 this.projectiles.push(new Projectile(projX, projY, this.facingDirection, this.gameWidth));
             }
-
-            // Draws the player sprite based on current state.
             draw(ctx) { 
-                let currentSprite = null;
-                let spriteKey = ''; 
-
-                // Determine the correct sprite based on state hierarchy
-                if (this.isDucking) {
-                    spriteKey = this.facingDirection === 'right' ? 'DuckRight' : 'DuckLeft';
-                    currentSprite = this.facingDirection === 'right' ? this.spriteDuckRight : this.spriteDuckLeft;
-                } else if (!this.onGround) { // Jumping or Falling
-                    spriteKey = this.facingDirection === 'right' ? 'JumpRight' : 'JumpLeft';
-                    currentSprite = this.facingDirection === 'right' ? this.spriteJumpRight : this.spriteJumpLeft;
-                } else { // On ground and not ducking
-                    if (this.isMovingHorizontally) { // Walking animation
-                        if (this.facingDirection === 'right') {
-                            spriteKey = this.currentWalkFrame === 0 ? 'MGSpriteright' : 'MGSpriteright2';
-                            currentSprite = this.currentWalkFrame === 0 ? this.spriteIdleRight : this.spriteWalkRight2;
-                        } else { // Facing left
-                            spriteKey = this.currentWalkFrame === 0 ? 'MGSpriteleft' : 'MGSpriteleft2';
-                            currentSprite = this.currentWalkFrame === 0 ? this.spriteIdleLeft : this.spriteWalkLeft2;
-                        }
-                    } else { // Idle (use frame 0)
-                        spriteKey = this.facingDirection === 'right' ? 'MGSpriteright' : 'MGSpriteleft';
-                        currentSprite = this.facingDirection === 'right' ? this.spriteIdleRight : this.spriteIdleLeft;
-                    }
-                }
-                
-                // Apply invincibility flashing
+                let currentSprite = null; let spriteKey = ''; 
+                if (this.isDucking) { spriteKey = this.facingDirection === 'right' ? 'DuckRight' : 'DuckLeft'; currentSprite = this.facingDirection === 'right' ? this.spriteDuckRight : this.spriteDuckLeft; } 
+                else if (!this.onGround) { spriteKey = this.facingDirection === 'right' ? 'JumpRight' : 'JumpLeft'; currentSprite = this.facingDirection === 'right' ? this.spriteJumpRight : this.spriteJumpLeft; } 
+                else { if (this.isMovingHorizontally) { if (this.facingDirection === 'right') { spriteKey = this.currentWalkFrame === 0 ? 'MGSpriteright' : 'MGSpriteright2'; currentSprite = this.currentWalkFrame === 0 ? this.spriteIdleRight : this.spriteWalkRight2; } else { spriteKey = this.currentWalkFrame === 0 ? 'MGSpriteleft' : 'MGSpriteleft2'; currentSprite = this.currentWalkFrame === 0 ? this.spriteIdleLeft : this.spriteWalkLeft2; } } else { spriteKey = this.facingDirection === 'right' ? 'MGSpriteright' : 'MGSpriteleft'; currentSprite = this.facingDirection === 'right' ? this.spriteIdleRight : this.spriteIdleLeft; } }
                 if (this.isInvincible) ctx.globalAlpha = (Math.floor(Date.now() / 100) % 2 === 0) ? 0.6 : 1.0;
-                
-                let drewSprite = false;
-                // Draw the chosen sprite if valid
-                if (currentSprite && currentSprite.complete && currentSprite.naturalHeight !== 0) {
-                    try { 
-                        ctx.drawImage(currentSprite, this.x, this.y, this.width, this.height); 
-                        drewSprite = true; 
-                    } 
-                    catch (e) { console.error("Player:draw - Error during ctx.drawImage:", e, currentSprite); }
-                }
-                
-                // Draw fallback rectangle if sprite drawing failed
-                if (!drewSprite) {
-                    ctx.fillStyle = this.fallbackColor; 
-                    ctx.fillRect(this.x, this.y, this.width, this.height);
-                    if (spriteKey && !this._spriteMissingLogged[spriteKey]) { 
-                        console.warn(`Player:draw - Fallback for sprite key "${spriteKey}". Details:`, currentSprite);
-                        this._spriteMissingLogged[spriteKey] = true; 
-                    }
-                }
-                ctx.globalAlpha = 1.0; // Reset alpha
-                
-                // Draw projectiles
-                this.projectiles.forEach(p => p.draw(ctx));
+                let drewSprite = false; if (currentSprite && currentSprite.complete && currentSprite.naturalHeight !== 0) { try { ctx.drawImage(currentSprite, this.x, this.y, this.width, this.height); drewSprite = true; } catch (e) { console.error("Player:draw Error:", e, currentSprite); } }
+                if (!drewSprite) { ctx.fillStyle = this.fallbackColor; ctx.fillRect(this.x, this.y, this.width, this.height); if (spriteKey && !this._spriteMissingLogged[spriteKey]) { console.warn(`Player:draw Fallback key "${spriteKey}"`, currentSprite); this._spriteMissingLogged[spriteKey] = true; } }
+                ctx.globalAlpha = 1.0; this.projectiles.forEach(p => p.draw(ctx));
             }
-
-            // Returns the player's collision rectangle.
-            getRect() { 
-                return { x: this.x, y: this.y, width: this.width, height: this.height }; 
-            }
-            // Handles player taking damage.
-            takeDamage() { 
-                if (this.isInvincible) return false; 
-                this.health--;
-                if (this.health > 0) { 
-                    this.isInvincible = true; 
-                    this.invincibilityTimer = this.invincibilityDuration; 
-                }
-                return true; 
-            }
+            getRect() { return { x: this.x, y: this.y, width: this.width, height: this.height }; }
+            takeDamage() { if (this.isInvincible) return false; this.health--; if (this.health > 0) { this.isInvincible = true; this.invincibilityTimer = this.invincibilityDuration; } return true; }
         }
 
         // --- Game Class ---
@@ -462,7 +354,7 @@
                 this.foliageX = 0; this.foliageScrollSpeedFactor = 0.3; 
             }
             
-            // MODIFIED: Spawns either a ground Enemy or a FlyingEnemy.
+            // *** MODIFIED: Spawns either a ground Enemy or a FlyingEnemy. ***
             spawnEnemy() { 
                 let newEnemy = null;
                 const spawnFlyingChance = 0.35; // Chance to spawn a flying enemy
@@ -474,8 +366,8 @@
                     // Spawn roughly in the middle third vertically
                     const spawnY = this.canvas.height * 0.3 + Math.random() * (this.canvas.height * 0.33); 
                     let spawnX;
-                    if (Math.random() < 0.5) { spawnX = 0 - (Math.random() * 50 + enemyWidth); } 
-                    else { spawnX = this.canvas.width + Math.random() * 50; } 
+                    if (Math.random() < 0.5) { spawnX = 0 - (Math.random() * 50 + enemyWidth); } // Off-screen left
+                    else { spawnX = this.canvas.width + Math.random() * 50; } // Off-screen right
                     newEnemy = new FlyingEnemy(spawnX, spawnY, this.canvas.width);
                     console.log("Spawned FlyingEnemy at", Math.round(spawnX), Math.round(spawnY));
                 } else {
@@ -555,16 +447,19 @@
                 }
             }
             
-            drawPlayerHealth() { /* ... (unchanged) ... */ }
-            draw() { /* ... (unchanged - draws all layers and entities) ... */ 
+            drawPlayerHealth() { 
+                 if (!this.player) return;
+                this.ctx.fillStyle = 'white'; this.ctx.font = '18px "Press Start 2P"';
+                this.ctx.textAlign = 'right';
+                this.ctx.fillText(`Health: ${"❤️".repeat(this.player.health)}`, this.canvas.width - 20, 30);
+            }
+            draw() { 
                  if (this.backgroundSprite && this.backgroundSprite.complete && this.backgroundSprite.naturalHeight !== 0) { this.ctx.drawImage(this.backgroundSprite, 0, 0, this.canvas.width, this.canvas.height); } 
                 else { this.ctx.fillStyle = '#2c3e50'; this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height); }
                 if (this.foliageSprite1 && this.foliageSprite1.complete && this.foliageSprite1.naturalHeight !== 0 && this.foliageSprite2 && this.foliageSprite2.complete && this.foliageSprite2.naturalHeight !== 0) {
                     const f1Width = this.foliageSprite1.width; const f2Width = this.foliageSprite2.width; const combinedWidth = f1Width + f2Width; 
-                    // Use modulo for simpler seamless wrap drawing
                     let startX = this.foliageX % combinedWidth;
-                    if (startX > 0) startX -= combinedWidth; // Ensure we start drawing from left if needed
-                    
+                    if (startX > 0) startX -= combinedWidth; 
                     for (let currentX = startX; currentX < this.canvas.width; currentX += combinedWidth) {
                          this.ctx.drawImage(this.foliageSprite1, currentX, 0, f1Width, this.canvas.height);
                          this.ctx.drawImage(this.foliageSprite2, currentX + f1Width, 0, f2Width, this.canvas.height);
@@ -572,15 +467,22 @@
                 }
                 this.ctx.fillStyle = '#7f8c8d'; this.ctx.fillRect(0, this.canvas.height - 10, this.canvas.width, 10);
                 if (this.player) this.player.draw(this.ctx); else { this.ctx.fillStyle = 'white'; this.ctx.font = '20px "Press Start 2P"'; this.ctx.textAlign = 'center'; this.ctx.fillText('Initializing Player...', this.canvas.width / 2, this.canvas.height / 2); }
-                this.enemies.forEach(enemy => enemy.draw(this.ctx)); // Will draw both Enemy and FlyingEnemy
+                this.enemies.forEach(enemy => enemy.draw(this.ctx)); 
                 this.ctx.fillStyle = 'white'; this.ctx.font = '20px "Press Start 2P"'; this.ctx.textAlign = 'left'; this.ctx.fillText(`Score: ${this.score}`, 20, 30);
                 this.drawPlayerHealth(); if (this.isGameOver) this.drawGameOverScreen();
             }
-            drawGameOverScreen() { /* ... (unchanged) ... */ }
+            drawGameOverScreen() { 
+                 this.ctx.fillStyle = 'rgba(0, 0, 0, 0.75)'; this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+                this.ctx.font = '48px "Press Start 2P"'; this.ctx.fillStyle = '#E74C3C'; this.ctx.textAlign = 'center'; this.ctx.fillText('GAME OVER', this.canvas.width / 2, this.canvas.height / 2 - 40);
+                this.ctx.font = '24px "Press Start 2P"'; this.ctx.fillStyle = 'white'; this.ctx.fillText(`Final Score: ${this.score}`, this.canvas.width / 2, this.canvas.height / 2 + 20);
+                this.ctx.fillText('Refresh to Play Again', this.canvas.width / 2, this.canvas.height / 2 + 70);
+            }
             gameOver() { this.isGameOver = true; }
-            gameLoop(timestamp) { /* ... (unchanged) ... */ }
+            gameLoop(timestamp) { 
+                 const deltaTime = timestamp - (this.lastTime || timestamp); this.lastTime = timestamp; if (!this.isGameOver && this.player) this.update(deltaTime); this.draw(); this.animationFrameId = requestAnimationFrame(this.gameLoop); 
+            }
 
-            // Initializes assets and starts the game loop.
+            // *** MODIFIED: Initializes assets including FlyingEnemy sprites and starts the game loop. ***
             async initAndStart() {
                 console.log("Game:initAndStart - Starting asset loading phase.");
                 // Load Player Sprites (Idle/Primary Walk, Secondary Walk, Jump, Duck)
