@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Metal Slug Lite - Single File</title>
+    <title>Metal Slug Lite - Sprite Player</title>
     <style>
         body {
             font-family: 'Press Start 2P', cursive, sans-serif;
-            background-color: #1a1a1a; /* Darker background */
+            background-color: #1a1a1a;
             color: #fff;
             display: flex;
             flex-direction: column;
@@ -16,21 +16,21 @@
             margin: 0;
             padding-top: 20px;
             height: 100vh;
-            overflow: hidden; /* Hide scrollbars if canvas is too big for viewport */
+            overflow: hidden;
         }
 
         h1 {
-            color: #FFD700; /* Gold */
-            text-shadow: 2px 2px #FF0000, -2px -2px #0000FF; /* Retro shadow */
+            color: #FFD700;
+            text-shadow: 2px 2px #FF0000, -2px -2px #0000FF;
             font-size: 1.8em;
             margin-bottom: 15px;
         }
 
         canvas {
             border: 4px solid #fff;
-            background-color: #000; /* Black game screen */
+            background-color: #000;
             display: block;
-            box-shadow: 0 0 15px #fff; /* Glow effect */
+            box-shadow: 0 0 15px #fff;
         }
 
         .controls-info {
@@ -41,16 +41,19 @@
             padding: 8px 12px;
             border-radius: 5px;
         }
-
-        /* Import the pixel font */
+         #loadingMessage {
+            color: yellow;
+            font-style: italic;
+        }
         @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
     </style>
 </head>
 <body>
-    <h1>Metal Slug Lite (Arcade)</h1>
+    <h1>Metal Slug Lite (Sprite Player)</h1>
     <canvas id="gameCanvas"></canvas>
     <div class="controls-info">
         <p>Controls: Arrow Keys (Move/Jump), Spacebar (Shoot)</p>
+        <p id="loadingMessage">Loading assets...</p>
     </div>
 
     <script>
@@ -64,251 +67,222 @@
             );
         }
 
+        // --- Asset Manager ---
+        const assetManager = {
+            images: {},
+            totalAssetsToLoad: 0,
+            loadedAssets: 0,
+            _promises: [], // Internal store for promises
+
+            loadImage(name, src) {
+                this.totalAssetsToLoad++;
+                const img = new Image();
+                const promise = new Promise((resolve, reject) => {
+                    img.onload = () => {
+                        this.images[name] = img;
+                        this.loadedAssets++;
+                        console.log(`Loaded image: ${name}`);
+                        resolve(img);
+                    };
+                    img.onerror = (err) => {
+                        console.error(`Failed to load image: ${name} from ${src}`, err);
+                        // Still resolve to not block Promise.all, but image will be undefined or broken
+                        // The game logic should handle missing images gracefully (e.g. fallback drawing)
+                        this.loadedAssets++; // Count as "attempted" to finish loading sequence
+                        reject(new Error(`Failed to load image: ${name}`));
+                    };
+                });
+                img.src = src;
+                this._promises.push(promise);
+                return promise;
+            },
+
+            async loadAll() {
+                const loadingMessageEl = document.getElementById('loadingMessage');
+                if (this.totalAssetsToLoad === 0) {
+                    if(loadingMessageEl) loadingMessageEl.style.display = 'none';
+                    return Promise.resolve();
+                }
+                
+                const progressInterval = setInterval(() => {
+                    if (loadingMessageEl) {
+                         loadingMessageEl.textContent = `Loading assets... (${this.loadedAssets}/${this.totalAssetsToLoad})`;
+                    }
+                }, 100);
+
+                return Promise.all(this._promises.map(p => p.catch(e => e))) // Handle individual promise rejections
+                    .then((results) => {
+                        const successfulLoads = results.filter(r => !(r instanceof Error));
+                        console.log(`All assets attempted. ${successfulLoads.length}/${this.totalAssetsToLoad} loaded successfully.`);
+                        if(loadingMessageEl) loadingMessageEl.style.display = 'none';
+                    })
+                    .catch((error) => { // Should not be reached if individual errors are caught above
+                        console.error("Unexpected error during asset loading process:", error);
+                         if(loadingMessageEl) loadingMessageEl.textContent = 'Critical error loading assets!';
+                    })
+                    .finally(() => {
+                        clearInterval(progressInterval);
+                        // Clear promises for potential re-runs or further asset loading, if needed.
+                        this._promises = []; 
+                        // Don't reset counters here if you might add more assets dynamically and call loadAll again.
+                        // For this game, it's a one-time load, so it's less critical.
+                    });
+            },
+
+            getImage(name) {
+                const img = this.images[name];
+                if (!img) {
+                    // console.warn(`AssetManager: Image "${name}" not found or not loaded.`);
+                } else if (img.complete && img.naturalHeight === 0) {
+                    // console.warn(`AssetManager: Image "${name}" loaded but seems broken (naturalHeight is 0).`);
+                }
+                return img;
+            }
+        };
+
+
         // --- Input Handler ---
         class InputHandler {
             constructor() {
                 this.keys = new Set();
-                this.shootPressedThisFrame = false; // More robust for single press
-
+                // Removed shootPressedThisFrame as Player's shootCooldown handles fire rate
                 window.addEventListener('keydown', (e) => {
                     if (['ArrowLeft', 'ArrowRight', 'ArrowUp', ' '].includes(e.key)) {
                         e.preventDefault();
-                        const keyName = e.key === ' ' ? 'Space' : e.key;
-                        this.keys.add(keyName);
-                        if (keyName === 'Space' && !this.shootPressedThisFrame) { // Allow holding for auto, but this ensures one press
-                             // For single shot per press, logic is in player's consumeShoot
-                        }
+                        this.keys.add(e.key === ' ' ? 'Space' : e.key);
                     }
                 });
-
                 window.addEventListener('keyup', (e) => {
                     if (['ArrowLeft', 'ArrowRight', 'ArrowUp', ' '].includes(e.key)) {
                         e.preventDefault();
-                        const keyName = e.key === ' ' ? 'Space' : e.key;
-                        this.keys.delete(keyName);
-                        if (keyName === 'Space') {
-                            this.shootPressedThisFrame = false; // Reset for next actual press
-                        }
+                        this.keys.delete(e.key === ' ' ? 'Space' : e.key);
                     }
                 });
             }
-
-            isKeyPressed(key) {
-                return this.keys.has(key);
-            }
-
-            // Call this to check if shoot was pressed and consume it
-            consumeShoot() {
-                if (this.keys.has('Space') && !this.shootPressedThisFrame) {
-                    this.shootPressedThisFrame = true; // Mark as consumed for this continuous press
-                                                      // will be reset on keyup
-                    return true;
-                }
-                // if you want auto-fire while holding, change logic here
-                // e.g. return this.keys.has('Space')
-                // For now, it's closer to one shot per press action, reset on keyup
-                // To make it tap-to-shoot (not hold), we need more state.
-                // The current `shootCooldown` in player handles fire rate.
-                // This consumeShoot is now more about "is the button down"
-                return this.keys.has('Space'); // Changed to allow holding for fire rate control
-            }
+            isKeyPressed(key) { return this.keys.has(key); }
+            consumeShoot() { return this.keys.has('Space'); } // Allows holding space for continuous fire
         }
 
         // --- Projectile Class ---
         class Projectile {
             constructor(x, y, direction, gameWidth) {
-                this.x = x;
-                this.y = y;
-                this.direction = direction;
-                this.gameWidth = gameWidth;
-                this.width = 10; // Slightly bigger bullet
-                this.height = 5;
-                this.speed = 9;
-                this.color = '#FFEB3B'; // Bright yellow
-                this.active = true;
+                this.x = x; this.y = y; this.direction = direction; this.gameWidth = gameWidth;
+                this.width = 10; this.height = 5; this.speed = 9;
+                this.color = '#FFEB3B'; this.active = true;
             }
-
             update() {
-                if (this.direction === 'right') {
-                    this.x += this.speed;
-                } else {
-                    this.x -= this.speed;
-                }
-                if (this.x < -this.width || this.x > this.gameWidth) {
-                    this.active = false;
-                }
+                this.x += (this.direction === 'right' ? this.speed : -this.speed);
+                if (this.x < -this.width || this.x > this.gameWidth) this.active = false;
             }
-
-            draw(ctx) {
-                ctx.fillStyle = this.color;
-                ctx.fillRect(this.x, this.y, this.width, this.height);
-            }
-
-            getRect() {
-              return { x: this.x, y: this.y, width: this.width, height: this.height };
-            }
+            draw(ctx) { ctx.fillStyle = this.color; ctx.fillRect(this.x, this.y, this.width, this.height); }
+            getRect() { return { x: this.x, y: this.y, width: this.width, height: this.height }; }
         }
 
         // --- Enemy Class ---
         class Enemy {
-            constructor(x, y, gameWidth) {
-                this.x = x;
-                this.y = y;
-                this.gameWidth = gameWidth;
-                this.width = 28;
-                this.height = 45;
-                this.color = '#F44336'; // Red enemy
-                this.speed = (Math.random() * 1.5 + 0.8); // Varied speed
-                this.active = true;
-                this.direction = (x > gameWidth / 2) ? -1 : 1; // Move towards center initially
-                this.health = 1; // Basic enemies die in one hit
+             constructor(x, y, gameWidth) {
+                this.x = x; this.y = y; this.gameWidth = gameWidth;
+                this.width = 28; this.height = 45;
+                this.color = '#F44336'; this.speed = (Math.random() * 1.5 + 0.8);
+                this.active = true; this.direction = (x > gameWidth / 2) ? -1 : 1;
+                this.health = 1;
             }
-
             update() {
                 this.x += this.speed * this.direction;
-                // Patrol behavior or turn if hitting edge
-                if (this.direction === -1 && this.x < 0 - this.width) {
-                    //this.direction = 1; // Option to turn back
-                    this.active = false; // Or despawn if they walk off-screen left
-                } else if (this.direction === 1 && this.x > this.gameWidth) {
-                    //this.direction = -1; // Option to turn back
-                    this.active = false; // Or despawn if they walk off-screen right
+                if ((this.direction === -1 && this.x < 0 - this.width) || (this.direction === 1 && this.x > this.gameWidth)) {
+                    this.active = false;
                 }
             }
-
             draw(ctx) {
-                ctx.fillStyle = this.color;
-                ctx.fillRect(this.x, this.y, this.width, this.height);
-                // Simple "eye" for direction
+                ctx.fillStyle = this.color; ctx.fillRect(this.x, this.y, this.width, this.height);
                 ctx.fillStyle = 'white';
                 const eyeX = this.direction === 'right' ? this.x + this.width - 8 : this.x + 2;
                 ctx.fillRect(eyeX, this.y + 8, 6, 6);
             }
-
-            getRect() {
-                return { x: this.x, y: this.y, width: this.width, height: this.height };
-            }
-
-            takeDamage() {
-                this.health--;
-                if (this.health <= 0) {
-                    this.active = false;
-                }
-            }
+            getRect() { return { x: this.x, y: this.y, width: this.width, height: this.height }; }
+            takeDamage() { if (--this.health <= 0) this.active = false; }
         }
 
         // --- Player Class ---
         class Player {
             constructor(gameWidth, gameHeight) {
-                this.gameWidth = gameWidth;
-                this.gameHeight = gameHeight;
-                this.width = 32;
-                this.height = 52;
-                this.x = 50;
-                this.y = gameHeight - this.height - 10; // Start on "ground"
-                this.color = '#4CAF50'; // Green player
-                this.speed = 4.5;
-                this.projectiles = [];
-                this.velocityY = 0;
-                this.gravity = 0.7;
-                this.jumpStrength = -16;
-                this.onGround = true;
-                this.facingDirection = 'right';
-                this.shootCooldown = 0;
-                this.shootCooldownTime = 180; // ms between shots (fire rate)
-                this.health = 3; // Player has health
-                this.isInvincible = false;
-                this.invincibilityDuration = 1500; // ms
-                this.invincibilityTimer = 0;
+                this.gameWidth = gameWidth; this.gameHeight = gameHeight;
+                // IMPORTANT: Adjust these width/height values to your sprite's desired size in the game
+                this.width = 48; // Example: Adjust to fit MGSprite.png
+                this.height = 78; // Example: Adjust to fit MGSprite.png
+                this.x = 50; this.y = gameHeight - this.height - 10; // Ground level
+                this.fallbackColor = '#4CAF50';
+                this.speed = 4.5; this.projectiles = [];
+                this.velocityY = 0; this.gravity = 0.7; this.jumpStrength = -16;
+                this.onGround = true; this.facingDirection = 'right';
+                this.shootCooldown = 0; this.shootCooldownTime = 180;
+                this.health = 3; this.isInvincible = false;
+                this.invincibilityDuration = 1500; this.invincibilityTimer = 0;
+
+                // Get pre-loaded sprites
+                this.spriteRight = assetManager.getImage('playerRight');
+                this.spriteLeft = assetManager.getImage('playerLeft');
             }
 
             update(input, deltaTime) {
-                // Horizontal movement
-                if (input.isKeyPressed('ArrowLeft')) {
-                    this.x -= this.speed;
-                    this.facingDirection = 'left';
-                }
-                if (input.isKeyPressed('ArrowRight')) {
-                    this.x += this.speed;
-                    this.facingDirection = 'right';
-                }
+                if (input.isKeyPressed('ArrowLeft')) { this.x -= this.speed; this.facingDirection = 'left'; }
+                if (input.isKeyPressed('ArrowRight')) { this.x += this.speed; this.facingDirection = 'right'; }
+                if (input.isKeyPressed('ArrowUp') && this.onGround) { this.velocityY = this.jumpStrength; this.onGround = false; }
 
-                // Jumping
-                if (input.isKeyPressed('ArrowUp') && this.onGround) {
-                    this.velocityY = this.jumpStrength;
-                    this.onGround = false;
-                }
+                this.y += this.velocityY; this.velocityY += this.gravity;
+                const groundLevel = this.gameHeight - this.height - 10;
+                if (this.y >= groundLevel) { this.y = groundLevel; this.velocityY = 0; this.onGround = true; }
 
-                // Apply gravity
-                this.y += this.velocityY;
-                this.velocityY += this.gravity;
-
-                // Ground collision
-                const groundLevel = this.gameHeight - this.height - 10; // 10px "platform"
-                if (this.y >= groundLevel) {
-                    this.y = groundLevel;
-                    this.velocityY = 0;
-                    this.onGround = true;
-                }
-
-                // Keep player within bounds
                 if (this.x < 0) this.x = 0;
                 if (this.x + this.width > this.gameWidth) this.x = this.gameWidth - this.width;
 
-                // Shooting
-                if (this.shootCooldown > 0) {
-                    this.shootCooldown -= deltaTime;
-                }
-                if (input.consumeShoot() && this.shootCooldown <= 0) {
-                    this.shoot();
-                    this.shootCooldown = this.shootCooldownTime;
-                }
+                if (this.shootCooldown > 0) this.shootCooldown -= deltaTime;
+                if (input.consumeShoot() && this.shootCooldown <= 0) { this.shoot(); this.shootCooldown = this.shootCooldownTime; }
 
-                // Update projectiles
                 this.projectiles.forEach(p => p.update());
                 this.projectiles = this.projectiles.filter(p => p.active);
 
-                // Invincibility
                 if (this.isInvincible) {
                     this.invincibilityTimer -= deltaTime;
-                    if (this.invincibilityTimer <= 0) {
-                        this.isInvincible = false;
-                    }
+                    if (this.invincibilityTimer <= 0) this.isInvincible = false;
                 }
             }
 
             shoot() {
-                const projX = this.facingDirection === 'right' ? this.x + this.width : this.x - 10; // 10 is projectile width
-                const projY = this.y + this.height / 2 - 2.5; // 2.5 is half projectile height
+                const projX = this.facingDirection === 'right' ? this.x + this.width : this.x - 10; // 10 = projectile.width
+                const projY = this.y + this.height / 2 - 2.5; // 2.5 = projectile.height / 2
                 this.projectiles.push(new Projectile(projX, projY, this.facingDirection, this.gameWidth));
             }
 
             draw(ctx) {
+                const currentSprite = this.facingDirection === 'right' ? this.spriteRight : this.spriteLeft;
+                
                 if (this.isInvincible) {
-                    // Flash effect for invincibility
                     ctx.globalAlpha = (Math.floor(Date.now() / 100) % 2 === 0) ? 0.6 : 1.0;
                 }
-                ctx.fillStyle = this.color;
-                ctx.fillRect(this.x, this.y, this.width, this.height);
+
+                if (currentSprite && currentSprite.complete && currentSprite.naturalHeight !== 0) {
+                    ctx.drawImage(currentSprite, this.x, this.y, this.width, this.height);
+                } else {
+                    ctx.fillStyle = this.fallbackColor; // Fallback if sprite not loaded/broken
+                    ctx.fillRect(this.x, this.y, this.width, this.height);
+                    // Log only once or less frequently if image is persistently missing
+                    if (!this._spriteMissingLogged && (!currentSprite || !currentSprite.complete)) {
+                        console.warn(`Player sprite for direction "${this.facingDirection}" is missing or not loaded. Drawing fallback.`);
+                        this._spriteMissingLogged = true; // Prevent flooding console
+                    }
+                }
                 ctx.globalAlpha = 1.0; // Reset alpha
 
-                // Draw projectiles
                 this.projectiles.forEach(p => p.draw(ctx));
             }
 
-            getRect() {
-                return { x: this.x, y: this.y, width: this.width, height: this.height };
-            }
-
+            getRect() { return { x: this.x, y: this.y, width: this.width, height: this.height }; }
             takeDamage() {
-                if (this.isInvincible) return false; // No damage if invincible
-
+                if (this.isInvincible) return false;
                 this.health--;
-                if (this.health > 0) {
-                    this.isInvincible = true;
-                    this.invincibilityTimer = this.invincibilityDuration;
-                }
-                return true; // Damage taken
+                if (this.health > 0) { this.isInvincible = true; this.invincibilityTimer = this.invincibilityDuration; }
+                return true;
             }
         }
 
@@ -316,205 +290,142 @@
         class Game {
             constructor(canvasId) {
                 this.canvas = document.getElementById(canvasId);
-                if (!this.canvas) {
-                    console.error(`Canvas with id ${canvasId} not found.`);
-                    alert("Error: Canvas element not found. Game cannot start.");
-                    return;
-                }
                 this.ctx = this.canvas.getContext('2d');
-                if (!this.ctx) {
-                    console.error('Failed to get 2D rendering context.');
-                    alert("Error: Failed to get 2D rendering context. Game cannot start.");
-                    return;
+                if (!this.canvas || !this.ctx) {
+                    alert("Error: Canvas not supported or found. Game cannot start.");
+                    throw new Error("Canvas init failed");
                 }
-
-                this.canvas.width = 800;
-                this.canvas.height = 450; // Slightly taller for more vertical space
+                this.canvas.width = 800; this.canvas.height = 450;
 
                 this.inputHandler = new InputHandler();
-                this.player = new Player(this.canvas.width, this.canvas.height);
-                this.enemies = [];
-                this.score = 0;
-                this.lastTime = 0;
-                this.animationFrameId = null;
-                this.isGameOver = false;
-
-                this.enemySpawnTimer = 0;
-                this.enemySpawnInterval = 2500; // ms
-
+                this.player = null; // Will be initialized after assets load
+                this.enemies = []; this.score = 0; this.lastTime = 0;
+                this.animationFrameId = null; this.isGameOver = false;
+                this.enemySpawnTimer = 0; this.enemySpawnInterval = 2500;
                 this.gameLoop = this.gameLoop.bind(this);
             }
 
             spawnEnemy() {
-                const groundY = this.canvas.height - 45 - 10; // enemy height 45, ground 10
-                let spawnX;
-                let direction;
-
-                if (Math.random() < 0.5) { // Spawn from left
-                    spawnX = -30 - Math.random() * 50; // Off-screen left
-                } else { // Spawn from right
-                    spawnX = this.canvas.width + Math.random() * 50; // Off-screen right
-                }
-                const newEnemy = new Enemy(spawnX, groundY, this.canvas.width);
-                this.enemies.push(newEnemy);
+                const groundY = this.canvas.height - 45 - 10; // enemy height 45
+                const spawnX = Math.random() < 0.5 ? -30 - Math.random() * 50 : this.canvas.width + Math.random() * 50;
+                this.enemies.push(new Enemy(spawnX, groundY, this.canvas.width));
             }
-
+            
             update(deltaTime) {
-                if (this.isGameOver) return;
-
+                if (this.isGameOver || !this.player) return;
                 this.player.update(this.inputHandler, deltaTime);
                 this.enemies.forEach(enemy => enemy.update());
 
-                // Collision: Player projectiles vs Enemies
+                // Projectile vs Enemy collision
                 this.player.projectiles.forEach(proj => {
                     this.enemies.forEach(enemy => {
                         if (proj.active && enemy.active && AABBCollision(proj.getRect(), enemy.getRect())) {
-                            proj.active = false;
-                            enemy.takeDamage(); // Enemy takes damage
-                            if (!enemy.active) { // If enemy died
-                                this.score += 100;
-                            }
+                            proj.active = false; enemy.takeDamage();
+                            if (!enemy.active) this.score += 100;
                         }
                     });
                 });
-
-                // Collision: Player vs Enemies
+                // Player vs Enemy collision
                 this.enemies.forEach(enemy => {
                     if (enemy.active && AABBCollision(this.player.getRect(), enemy.getRect())) {
-                        if (this.player.takeDamage()) { // If damage was actually taken (not invincible)
-                           // Optionally, add a knockback or other effect here
-                        }
-                        if (this.player.health <= 0) {
-                            this.gameOver();
-                        }
+                        if (this.player.takeDamage() && this.player.health <= 0) this.gameOver();
                     }
                 });
-
-                // Remove inactive entities
                 this.player.projectiles = this.player.projectiles.filter(p => p.active);
                 this.enemies = this.enemies.filter(e => e.active);
 
-                // Enemy Spawning
                 this.enemySpawnTimer += deltaTime;
                 if (this.enemySpawnTimer >= this.enemySpawnInterval) {
-                    if (this.enemies.length < 8) { // Max 8 enemies on screen
-                       this.spawnEnemy();
-                    }
+                    if (this.enemies.length < 8) this.spawnEnemy();
                     this.enemySpawnTimer = 0;
-                    // Gradually decrease spawn interval to increase difficulty
                     if (this.enemySpawnInterval > 800) this.enemySpawnInterval -= 20;
                 }
             }
-            
+
             drawPlayerHealth() {
-                this.ctx.fillStyle = 'white';
-                this.ctx.font = '18px "Press Start 2P"';
+                if (!this.player) return;
+                this.ctx.fillStyle = 'white'; this.ctx.font = '18px "Press Start 2P"';
                 this.ctx.textAlign = 'right';
-                let healthText = "Health: ";
-                for(let i = 0; i < this.player.health; i++) {
-                    healthText += "❤️"; // Simple heart representation
-                }
-                this.ctx.fillText(healthText, this.canvas.width - 20, 30);
+                this.ctx.fillText(`Health: ${"❤️".repeat(this.player.health)}`, this.canvas.width - 20, 30);
             }
-
+            
             draw() {
-                if (!this.ctx) return;
-                // Clear canvas
-                this.ctx.fillStyle = '#2c3e50'; // Midnight blue background
-                this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+                this.ctx.fillStyle = '#2c3e50'; this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+                this.ctx.fillStyle = '#7f8c8d'; this.ctx.fillRect(0, this.canvas.height - 10, this.canvas.width, 10);
 
-                // Draw "ground"
-                this.ctx.fillStyle = '#7f8c8d'; // Concrete gray ground
-                this.ctx.fillRect(0, this.canvas.height - 10, this.canvas.width, 10);
-
-                this.player.draw(this.ctx);
+                if (this.player) this.player.draw(this.ctx);
+                else { // Fallback if player isn't loaded yet
+                    this.ctx.fillStyle = 'white'; this.ctx.font = '20px "Press Start 2P"';
+                    this.ctx.textAlign = 'center';
+                    this.ctx.fillText('Initializing Player...', this.canvas.width / 2, this.canvas.height / 2);
+                }
                 this.enemies.forEach(enemy => enemy.draw(this.ctx));
 
-                // Draw Score
-                this.ctx.fillStyle = 'white';
-                this.ctx.font = '20px "Press Start 2P"';
-                this.ctx.textAlign = 'left';
-                this.ctx.fillText(`Score: ${this.score}`, 20, 30);
-
-                // Draw Player Health
+                this.ctx.fillStyle = 'white'; this.ctx.font = '20px "Press Start 2P"';
+                this.ctx.textAlign = 'left'; this.ctx.fillText(`Score: ${this.score}`, 20, 30);
                 this.drawPlayerHealth();
 
-                if (this.isGameOver) {
-                    this.drawGameOverScreen();
-                }
+                if (this.isGameOver) this.drawGameOverScreen();
             }
-            
+
             drawGameOverScreen() {
                 this.ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
                 this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-                
-                this.ctx.font = '48px "Press Start 2P"';
-                this.ctx.fillStyle = '#E74C3C'; // Alizarin Red
+                this.ctx.font = '48px "Press Start 2P"'; this.ctx.fillStyle = '#E74C3C';
                 this.ctx.textAlign = 'center';
                 this.ctx.fillText('GAME OVER', this.canvas.width / 2, this.canvas.height / 2 - 40);
-                
-                this.ctx.font = '24px "Press Start 2P"';
-                this.ctx.fillStyle = 'white';
+                this.ctx.font = '24px "Press Start 2P"'; this.ctx.fillStyle = 'white';
                 this.ctx.fillText(`Final Score: ${this.score}`, this.canvas.width / 2, this.canvas.height / 2 + 20);
-                
-                this.ctx.font = '18px "Press Start 2P"';
                 this.ctx.fillText('Refresh to Play Again', this.canvas.width / 2, this.canvas.height / 2 + 70);
             }
-
-            gameOver() {
-                this.isGameOver = true;
-                // No need to cancel animation frame if gameLoop checks isGameOver
-                // and stops calling update/draw logic itself.
-                // The loop will continue but only draw the game over screen.
-            }
+            gameOver() { this.isGameOver = true; }
 
             gameLoop(timestamp) {
-                if (!this.lastTime) this.lastTime = timestamp; // Initialize lastTime on first frame
-                const deltaTime = timestamp - this.lastTime;
+                const deltaTime = timestamp - (this.lastTime || timestamp); // Handle first frame
                 this.lastTime = timestamp;
 
-                if (!this.isGameOver) {
-                    this.update(deltaTime);
-                }
-                this.draw(); // Always draw (for game over screen)
-
+                if (!this.isGameOver && this.player) this.update(deltaTime);
+                this.draw();
                 this.animationFrameId = requestAnimationFrame(this.gameLoop);
             }
 
-            start() {
-                if (!this.ctx || !this.canvas) { // Ensure canvas and context are valid
-                    console.error("Cannot start game: canvas or context not initialized.");
-                    return;
-                }
-                this.isGameOver = false;
-                this.score = 0;
-                this.player = new Player(this.canvas.width, this.canvas.height); // Reset player
-                this.enemies = []; // Clear enemies
-                this.enemySpawnTimer = 0;
-                this.enemySpawnInterval = 2500;
-                
-                // Initial enemy
-                this.spawnEnemy(); 
+            async initAndStart() {
+                // 1. Load assets
+                assetManager.loadImage('playerLeft', 'MGSpriteleft.png');
+                assetManager.loadImage('playerRight', 'MGSpriteright.png');
+                // Add future assets here: assetManager.loadImage('enemy1', 'enemy1.png');
 
-                if (this.animationFrameId) {
-                    cancelAnimationFrame(this.animationFrameId);
-                }
-                this.lastTime = 0; // Reset lastTime for correct deltaTime on new start
+                await assetManager.loadAll(); // Wait for all images
+
+                // 2. Initialize game objects that depend on assets
+                this.player = new Player(this.canvas.width, this.canvas.height);
+
+                // 3. Reset game state & start loop
+                this.isGameOver = false; this.score = 0;
+                this.enemies = []; this.enemySpawnTimer = 0;
+                this.enemySpawnInterval = 2500;
+                this.spawnEnemy(); // Initial enemy
+
+                if (this.animationFrameId) cancelAnimationFrame(this.animationFrameId);
+                this.lastTime = 0; // Reset for accurate deltaTime on new start
                 this.animationFrameId = requestAnimationFrame(this.gameLoop);
             }
         }
 
         // --- Initialize Game ---
         window.addEventListener('DOMContentLoaded', () => {
-            const game = new Game('gameCanvas');
-            if (game.canvas && game.ctx) { // Only start if game object was successfully created
-                 game.start();
-            } else {
-                // Error messages already handled in Game constructor
-                const controlsInfo = document.querySelector('.controls-info');
-                if (controlsInfo) {
-                    controlsInfo.innerHTML = "<p style='color:red;'>Error: Game could not initialize. Please ensure your browser supports HTML5 Canvas and JavaScript.</p>";
-                }
+            try {
+                const game = new Game('gameCanvas');
+                game.initAndStart().catch(err => {
+                    console.error("Failed to initialize and start game:", err);
+                    const loadingMessageEl = document.getElementById('loadingMessage');
+                    if (loadingMessageEl) loadingMessageEl.textContent = "Error starting game. Check console.";
+                });
+            } catch (e) {
+                console.error("Error creating Game instance:", e);
+                alert("Critical error: Game could not be created. Check console.");
+                 const loadingMessageEl = document.getElementById('loadingMessage');
+                 if(loadingMessageEl) loadingMessageEl.textContent = "Critical error creating game instance.";
             }
         });
     </script>
