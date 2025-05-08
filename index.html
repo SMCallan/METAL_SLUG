@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Metal Lugs</title>
+    <title>Metal Lugs - Player Actions</title>
     <style>
         body {
             font-family: 'Press Start 2P', cursive, sans-serif;
@@ -46,10 +46,10 @@
     </style>
 </head>
 <body>
-    <h1>Metal Lugs</h1>
+    <h1>Metal Lugs - Player Actions</h1>
     <canvas id="gameCanvas"></canvas>
     <div class="controls-info">
-        <p>Controls: Arrow Keys (Move/Jump), Spacebar (Shoot)</p>
+        <p>Controls: Arrow Keys (Move/Jump/Duck), Spacebar (Shoot)</p>
         <p id="loadingMessage">LOADING ASSETS...</p>
     </div>
 
@@ -67,7 +67,7 @@
         }
 
         // --- Asset Manager ---
-        const assetManager = {
+        const assetManager = { /* ... (no change from previous version) ... */ 
             images: {}, totalAssetsToLoad: 0, loadedAssets: 0, _promises: [],
             loadImage(name, src) {
                 console.log(`AssetManager:loadImage - Queuing ${name} from ${src}`);
@@ -119,18 +119,21 @@
             }
         };
 
-        // --- Input Handler ---
-        class InputHandler { /* ... (no change) ... */ 
+        // --- Input Handler (MODIFIED) ---
+        class InputHandler { 
             constructor() {
                 this.keys = new Set();
+                // ADDED 'ArrowDown' to the list of keys
+                const relevantKeys = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', ' '];
+
                 window.addEventListener('keydown', (e) => {
-                    if (['ArrowLeft', 'ArrowRight', 'ArrowUp', ' '].includes(e.key)) {
+                    if (relevantKeys.includes(e.key)) {
                         e.preventDefault();
                         this.keys.add(e.key === ' ' ? 'Space' : e.key);
                     }
                 });
                 window.addEventListener('keyup', (e) => {
-                    if (['ArrowLeft', 'ArrowRight', 'ArrowUp', ' '].includes(e.key)) {
+                    if (relevantKeys.includes(e.key)) {
                         e.preventDefault();
                         this.keys.delete(e.key === ' ' ? 'Space' : e.key);
                     }
@@ -156,7 +159,7 @@
         }
 
         // --- Enemy Class ---
-        class Enemy { /* ... (no change from previous version with correct y-coord and sizes) ... */ 
+        class Enemy { /* ... (no change from previous version) ... */ 
              constructor(x, y, gameWidth) {
                 this.gameWidth = gameWidth;
                 this.width = 50;  
@@ -234,8 +237,8 @@
             }
         }
         
-        // --- Player Class ---
-        class Player { /* ... (no change from previous version with correct y-coord and sizes) ... */ 
+        // --- Player Class (MODIFIED FOR JUMP/DUCK SPRITES & ACTIONS) ---
+        class Player { 
             constructor(gameWidth, gameHeight) {
                 console.log("Player:constructor - Initializing.");
                 this.gameWidth = gameWidth; this.gameHeight = gameHeight;
@@ -243,66 +246,154 @@
                 this.height = 98;  
                 this.x = 50; 
                 this.y = gameHeight - this.height - 10; 
+                this.playerMovedX = 0; // For parallax
+                
                 this.fallbackColor = '#4CAF50';
                 this.speed = 5; 
                 this.projectiles = [];
                 this.velocityY = 0; this.gravity = 0.75; 
                 this.jumpStrength = -17; 
-                this.onGround = true; this.facingDirection = 'right';
+                this.onGround = true; 
+                this.facingDirection = 'right';
+                this.isDucking = false; // New state for ducking
+
                 this.shootCooldown = 0; this.shootCooldownTime = 180;
                 this.health = 3; this.isInvincible = false;
                 this.invincibilityDuration = 1500; this.invincibilityTimer = 0;
-                this._spriteMissingLogged = { left: false, right: false };
-                this.spriteRight = assetManager.getImage('playerRight');
-                this.spriteLeft = assetManager.getImage('playerLeft');
-            }
-            update(input, deltaTime) { 
-                const oldPlayerX = this.x; // Store player's x before movement
-
-                if (input.isKeyPressed('ArrowLeft')) { this.x -= this.speed; this.facingDirection = 'left'; }
-                if (input.isKeyPressed('ArrowRight')) { this.x += this.speed; this.facingDirection = 'right'; }
                 
-                this.playerMovedX = this.x - oldPlayerX; // Calculate how much player moved horizontally
+                this._spriteMissingLogged = { 
+                    left: false, right: false, 
+                    jumpLeft: false, jumpRight: false, 
+                    duckLeft: false, duckRight: false 
+                };
 
-                if (input.isKeyPressed('ArrowUp') && this.onGround) { this.velocityY = this.jumpStrength; this.onGround = false; }
-                this.y += this.velocityY; this.velocityY += this.gravity;
+                // Load all player sprites
+                this.spriteRight = assetManager.getImage('playerRight'); // Standing/Walking right
+                this.spriteLeft = assetManager.getImage('playerLeft');   // Standing/Walking left
+                this.spriteJumpRight = assetManager.getImage('playerJumpRight');
+                this.spriteJumpLeft = assetManager.getImage('playerJumpLeft');
+                this.spriteDuckRight = assetManager.getImage('playerDuckRight');
+                this.spriteDuckLeft = assetManager.getImage('playerDuckLeft');
+            }
+
+            update(input, deltaTime) { 
+                const oldPlayerX = this.x; 
+
+                // Ducking logic
+                if (input.isKeyPressed('ArrowDown') && this.onGround) {
+                    this.isDucking = true;
+                } else {
+                    this.isDucking = false;
+                }
+
+                // Movement and Jumping (only if not ducking)
+                if (!this.isDucking) {
+                    if (input.isKeyPressed('ArrowLeft')) { 
+                        this.x -= this.speed; 
+                        this.facingDirection = 'left'; 
+                    }
+                    if (input.isKeyPressed('ArrowRight')) { 
+                        this.x += this.speed; 
+                        this.facingDirection = 'right'; 
+                    }
+                    if (input.isKeyPressed('ArrowUp') && this.onGround) { 
+                        this.velocityY = this.jumpStrength; 
+                        this.onGround = false; 
+                    }
+                }
+                
+                this.playerMovedX = this.x - oldPlayerX; 
+
+                // Apply gravity (always applies, even if ducking, though jump is disabled)
+                this.y += this.velocityY; 
+                this.velocityY += this.gravity;
+                
                 const groundLevel = this.gameHeight - this.height - 10; 
-                if (this.y >= groundLevel) { this.y = groundLevel; this.velocityY = 0; this.onGround = true; }
+                if (this.y >= groundLevel) { 
+                    this.y = groundLevel; 
+                    this.velocityY = 0; 
+                    this.onGround = true; 
+                }
+
+                // Keep player in bounds
                 if (this.x < 0) this.x = 0;
                 if (this.x + this.width > this.gameWidth) this.x = this.gameWidth - this.width;
+                
+                // Shooting (can shoot while ducking or jumping)
                 if (this.shootCooldown > 0) this.shootCooldown -= deltaTime;
-                if (input.consumeShoot() && this.shootCooldown <= 0) { this.shoot(); this.shootCooldown = this.shootCooldownTime; }
+                if (input.consumeShoot() && this.shootCooldown <= 0) { 
+                    this.shoot(); 
+                    this.shootCooldown = this.shootCooldownTime; 
+                }
+                
                 this.projectiles.forEach(p => p.update());
                 this.projectiles = this.projectiles.filter(p => p.active);
+                
                 if (this.isInvincible) {
                     this.invincibilityTimer -= deltaTime;
                     if (this.invincibilityTimer <= 0) this.isInvincible = false;
                 }
             }
+
             shoot() { 
+                // Adjust projectile origin if ducking (optional, for now uses center of standing height)
                 const projX = this.facingDirection === 'right' ? this.x + this.width : this.x - 10;
-                const projY = this.y + this.height / 2 - 2.5;
+                let projY = this.y + this.height / 2 - 2.5; 
+                // if (this.isDucking) { projY = this.y + DUCK_HEIGHT / 2 - 2.5; } // Requires DUCK_HEIGHT
                 this.projectiles.push(new Projectile(projX, projY, this.facingDirection, this.gameWidth));
             }
+
             draw(ctx) { 
-                const currentSprite = this.facingDirection === 'right' ? this.spriteRight : this.spriteLeft;
+                let currentSprite = null;
+                let spriteKey = '';
+
+                if (this.isDucking) {
+                    currentSprite = this.facingDirection === 'right' ? this.spriteDuckRight : this.spriteDuckLeft;
+                    spriteKey = this.facingDirection === 'right' ? 'duckRight' : 'duckLeft';
+                } else if (!this.onGround) { // Jumping or Falling
+                    currentSprite = this.facingDirection === 'right' ? this.spriteJumpRight : this.spriteJumpLeft;
+                    spriteKey = this.facingDirection === 'right' ? 'jumpRight' : 'jumpLeft';
+                } else { // On ground and not ducking (standing/walking)
+                    currentSprite = this.facingDirection === 'right' ? this.spriteRight : this.spriteLeft;
+                    spriteKey = this.facingDirection === 'right' ? 'right' : 'left';
+                }
+                
                 if (this.isInvincible) ctx.globalAlpha = (Math.floor(Date.now() / 100) % 2 === 0) ? 0.6 : 1.0;
+                
                 let drewSprite = false;
                 if (currentSprite && currentSprite.complete && currentSprite.naturalHeight !== 0) {
-                    try { ctx.drawImage(currentSprite, this.x, this.y, this.width, this.height); drewSprite = true; } 
+                    try { 
+                        // For ducking, you might want to adjust the y-position if the duck sprite is shorter
+                        // and you want its feet to align with the ground correctly, or if its height is different.
+                        // For now, draw at standard player y, width, height.
+                        ctx.drawImage(currentSprite, this.x, this.y, this.width, this.height); 
+                        drewSprite = true; 
+                    } 
                     catch (e) { console.error("Player:draw - Error during ctx.drawImage:", e, currentSprite); }
                 }
+                
                 if (!drewSprite) {
-                    ctx.fillStyle = this.fallbackColor; ctx.fillRect(this.x, this.y, this.width, this.height);
-                    if (!this._spriteMissingLogged[this.facingDirection]) {
-                        console.warn(`Player:draw - Fallback for direction "${this.facingDirection}". Sprite details:`, currentSprite);
-                        this._spriteMissingLogged[this.facingDirection] = true;
+                    ctx.fillStyle = this.fallbackColor; 
+                    ctx.fillRect(this.x, this.y, this.width, this.height);
+                    if (spriteKey && !this._spriteMissingLogged[spriteKey]) {
+                        console.warn(`Player:draw - Fallback for sprite key "${spriteKey}". Details:`, currentSprite);
+                        this._spriteMissingLogged[spriteKey] = true;
                     }
                 }
-                ctx.globalAlpha = 1.0; this.projectiles.forEach(p => p.draw(ctx));
+                ctx.globalAlpha = 1.0; 
+                this.projectiles.forEach(p => p.draw(ctx));
             }
-            getRect() { return { x: this.x, y: this.y, width: this.width, height: this.height }; }
-            takeDamage() { 
+
+            getRect() { 
+                // If ducking, the hitbox *should* ideally be smaller.
+                // For now, we keep it the same as standing.
+                // To implement a smaller ducking hitbox:
+                // if (this.isDucking) {
+                //     return { x: this.x, y: this.y + (this.height - DUCKING_SPRITE_HEIGHT), width: this.width, height: DUCKING_SPRITE_HEIGHT };
+                // }
+                return { x: this.x, y: this.y, width: this.width, height: this.height }; 
+            }
+            takeDamage() { /* ... (no change) ... */ 
                 if (this.isInvincible) return false; this.health--;
                 if (this.health > 0) { this.isInvincible = true; this.invincibilityTimer = this.invincibilityDuration; }
                 return true;
@@ -310,7 +401,7 @@
         }
 
         // --- Game Class (MODIFIED FOR FOREGROUND) ---
-        class Game {
+        class Game { /* ... (no change from previous version with foliage) ... */ 
             constructor(canvasId) { 
                 console.log("Game:constructor - Initializing.");
                 this.canvas = document.getElementById(canvasId);
@@ -324,15 +415,12 @@
                 this.enemySpawnTimer = 0; this.enemySpawnInterval = 2500; 
                 this.gameLoop = this.gameLoop.bind(this);
                 this.backgroundSprite = null;
-                
-                // Foreground properties
                 this.foliageSprite1 = null;
                 this.foliageSprite2 = null;
                 this.foliageX = 0;
-                this.foliageScrollSpeedFactor = 0.3; // Foliage scrolls at 30% of player's speed
+                this.foliageScrollSpeedFactor = 0.3; 
             }
-
-            spawnEnemy() { /* ... (no change) ... */ 
+            spawnEnemy() { 
                 const groundLevelY = this.canvas.height - 10; 
                 const enemyHeight = 75; 
                 const enemyY = groundLevelY - enemyHeight;
@@ -345,30 +433,21 @@
                 }
                 this.enemies.push(new Enemy(spawnX, enemyY, this.canvas.width));
             }
-            
             update(deltaTime) { 
                 if (this.isGameOver || !this.player) return;
-                
-                this.player.update(this.inputHandler, deltaTime); // Player update now sets this.player.playerMovedX
-                
-                // Update foliage position based on player's horizontal movement
+                this.player.update(this.inputHandler, deltaTime); 
                 if (this.player.playerMovedX !== 0 && this.foliageSprite1 && this.foliageSprite2) {
                     this.foliageX -= this.player.playerMovedX * this.foliageScrollSpeedFactor;
-
-                    // Combined width of the two foliage images
                     const combinedFoliageWidth = this.foliageSprite1.width + this.foliageSprite2.width;
-                    if (combinedFoliageWidth > 0) { // Avoid division by zero if images not loaded
-                        // Wrap foliageX
+                    if (combinedFoliageWidth > 0) { 
                         if (this.foliageX <= -combinedFoliageWidth) {
                             this.foliageX += combinedFoliageWidth;
-                        } else if (this.foliageX >= 0) { // If scrolling left past original start
+                        } else if (this.foliageX >= 0) { 
                              this.foliageX -= combinedFoliageWidth;
                         }
                     }
                 }
-                this.player.playerMovedX = 0; // Reset for next frame
-
-
+                this.player.playerMovedX = 0; 
                 this.enemies.forEach(enemy => enemy.update(deltaTime));
                 this.player.projectiles.forEach(proj => {
                     this.enemies.forEach(enemy => {
@@ -391,59 +470,39 @@
                     if (this.enemySpawnInterval > 1000) this.enemySpawnInterval -= 25; 
                 }
             }
-
-            drawPlayerHealth() { /* ... (no change) ... */ 
+            drawPlayerHealth() { 
                  if (!this.player) return;
                 this.ctx.fillStyle = 'white'; this.ctx.font = '18px "Press Start 2P"';
                 this.ctx.textAlign = 'right';
                 this.ctx.fillText(`Health: ${"❤️".repeat(this.player.health)}`, this.canvas.width - 20, 30);
             }
-            
             draw() {
-                // 1. Draw Far Background (SettingSun)
                 if (this.backgroundSprite && this.backgroundSprite.complete && this.backgroundSprite.naturalHeight !== 0) {
                     this.ctx.drawImage(this.backgroundSprite, 0, 0, this.canvas.width, this.canvas.height);
                 } else {
                     this.ctx.fillStyle = '#2c3e50'; 
                     this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
                 }
-
-                // 2. Draw Scrolling Foreground (Foliage)
                 if (this.foliageSprite1 && this.foliageSprite1.complete && this.foliageSprite1.naturalHeight !== 0 &&
                     this.foliageSprite2 && this.foliageSprite2.complete && this.foliageSprite2.naturalHeight !== 0) {
-                    
                     const f1Width = this.foliageSprite1.width;
                     const f2Width = this.foliageSprite2.width;
                     const combinedWidth = f1Width + f2Width;
-                    
-                    // Draw enough copies to fill the screen and handle wrapping
-                    // Start drawing from foliageX, and then foliageX + combinedWidth, foliageX - combinedWidth etc.
-                    
                     let currentX = this.foliageX;
-                    
-                    // Draw images to the right to fill the screen
-                    // We draw pairs of (foliage1, foliage2)
                     while (currentX < this.canvas.width) {
                         this.ctx.drawImage(this.foliageSprite1, currentX, 0, f1Width, this.canvas.height);
                         this.ctx.drawImage(this.foliageSprite2, currentX + f1Width, 0, f2Width, this.canvas.height);
                         currentX += combinedWidth;
                     }
-
-                    // Draw images to the left if needed (if foliageX is positive, part of the tile is off-screen left)
                     currentX = this.foliageX - combinedWidth;
-                     while (currentX + combinedWidth > 0) { // Draw if any part of the combined tile is visible
+                     while (currentX + combinedWidth > 0) { 
                         this.ctx.drawImage(this.foliageSprite1, currentX, 0, f1Width, this.canvas.height);
                         this.ctx.drawImage(this.foliageSprite2, currentX + f1Width, 0, f2Width, this.canvas.height);
                         currentX -= combinedWidth;
                     }
                 }
-
-
-                // 3. Draw Ground 
                 this.ctx.fillStyle = '#7f8c8d'; 
                 this.ctx.fillRect(0, this.canvas.height - 10, this.canvas.width, 10);
-                
-                // 4. Draw Game Elements (Player, Enemies)
                 if (this.player) this.player.draw(this.ctx);
                 else { 
                     this.ctx.fillStyle = 'white'; this.ctx.font = '20px "Press Start 2P"';
@@ -451,15 +510,12 @@
                     this.ctx.fillText('Initializing Player...', this.canvas.width / 2, this.canvas.height / 2);
                 }
                 this.enemies.forEach(enemy => enemy.draw(this.ctx));
-                
-                // 5. Draw UI
                 this.ctx.fillStyle = 'white'; this.ctx.font = '20px "Press Start 2P"';
                 this.ctx.textAlign = 'left'; this.ctx.fillText(`Score: ${this.score}`, 20, 30);
                 this.drawPlayerHealth();
                 if (this.isGameOver) this.drawGameOverScreen();
              }
-
-            drawGameOverScreen() { /* ... (no change) ... */ 
+            drawGameOverScreen() { 
                 this.ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
                 this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
                 this.ctx.font = '48px "Press Start 2P"'; this.ctx.fillStyle = '#E74C3C';
@@ -470,8 +526,7 @@
                 this.ctx.fillText('Refresh to Play Again', this.canvas.width / 2, this.canvas.height / 2 + 70);
             }
             gameOver() { this.isGameOver = true; }
-
-            gameLoop(timestamp) { /* ... (no change) ... */ 
+            gameLoop(timestamp) { 
                 const deltaTime = timestamp - (this.lastTime || timestamp);
                 this.lastTime = timestamp;
                 if (!this.isGameOver && this.player) this.update(deltaTime);
@@ -481,19 +536,26 @@
 
             async initAndStart() {
                 console.log("Game:initAndStart - Starting asset loading phase.");
+                // Player Sprites
                 assetManager.loadImage('playerLeft', 'MGSpriteleft.png');
                 assetManager.loadImage('playerRight', 'MGSpriteright.png');
+                assetManager.loadImage('playerJumpLeft', 'JumpLeft.png');     // NEW
+                assetManager.loadImage('playerJumpRight', 'JumpRight.png');   // NEW
+                assetManager.loadImage('playerDuckLeft', 'DuckLeft.png');     // NEW
+                assetManager.loadImage('playerDuckRight', 'DuckRight.png');   // NEW
+
+                // Enemy Sprites
                 assetManager.loadImage('leftEnemyWalk1', 'leftenemy1.png');
                 assetManager.loadImage('leftEnemyWalk2', 'leftenemy2.png');
                 assetManager.loadImage('leftEnemyExplosion', 'leftenemy3.png');
                 assetManager.loadImage('rightEnemyWalk1', 'rightenemy1.png');
                 assetManager.loadImage('rightEnemyWalk2', 'rightenemy2.png');
                 assetManager.loadImage('rightEnemyExplosion', 'rightenemy3.png');
+                
+                // Scenery Sprites
                 assetManager.loadImage('background', 'SettingSun.png');
-                // LOAD FOLIAGE IMAGES
                 assetManager.loadImage('foliage1', 'foliage1.png');
                 assetManager.loadImage('foliage2', 'foliage2.png');
-
 
                 try {
                     await assetManager.loadAll();
@@ -501,10 +563,9 @@
                     this.backgroundSprite = assetManager.getImage('background');
                     this.foliageSprite1 = assetManager.getImage('foliage1');
                     this.foliageSprite2 = assetManager.getImage('foliage2');
-
+                    // Warnings for missing scenery sprites
                     if (!this.backgroundSprite) console.warn("Background sprite not loaded!");
                     if (!this.foliageSprite1 || !this.foliageSprite2) console.warn("One or both foliage sprites not loaded!");
-
 
                 } catch (err) {
                     console.error("Game:initAndStart - Error during assetManager.loadAll():", err);
