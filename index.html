@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Metal Lugs - Player Actions</title> <!-- KEPT YOUR TITLE -->
+    <title>Metal Lugs - Player Actions</title> <!-- Title from your file -->
     <style>
         body {
             font-family: 'Press Start 2P', cursive, sans-serif;
@@ -46,7 +46,7 @@
     </style>
 </head>
 <body>
-    <h1>Metal Lugs - Player Actions</h1> <!-- KEPT YOUR TITLE -->
+    <h1>Metal Lugs - Player Actions</h1> <!-- Title from your file -->
     <canvas id="gameCanvas"></canvas>
     <div class="controls-info">
         <p>Controls: Arrow Keys (Move/Jump/Duck), Spacebar (Shoot)</p>
@@ -67,7 +67,7 @@
         }
 
         // --- Asset Manager ---
-        const assetManager = { /* ... (no change) ... */ 
+        const assetManager = { /* ... (no change from your file) ... */ 
             images: {}, totalAssetsToLoad: 0, loadedAssets: 0, _promises: [],
             loadImage(name, src) {
                 console.log(`AssetManager:loadImage - Queuing ${name} from ${src}`);
@@ -120,7 +120,7 @@
         };
 
         // --- Input Handler ---
-        class InputHandler { /* ... (no change from your version) ... */ 
+        class InputHandler { /* ... (no change from your file) ... */ 
             constructor() {
                 this.keys = new Set();
                 const relevantKeys = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', ' '];
@@ -143,7 +143,7 @@
         }
 
         // --- Projectile Class ---
-        class Projectile { /* ... (no change) ... */ 
+        class Projectile { /* ... (no change from your file) ... */ 
             constructor(x, y, direction, gameWidth) {
                 this.x = x; this.y = y; this.direction = direction; this.gameWidth = gameWidth;
                 this.width = 10; this.height = 5; this.speed = 9;
@@ -158,7 +158,7 @@
         }
 
         // --- Enemy Class ---
-        class Enemy { /* ... (no change from your version) ... */ 
+        class Enemy { /* ... (no change from your file) ... */ 
              constructor(x, y, gameWidth) {
                 this.gameWidth = gameWidth; this.width = 50;  this.height = 75; this.x = x; this.y = y; 
                 this.fallbackColor = '#F44336'; this.speed = (Math.random()*1.0+0.5); this.active = true;
@@ -175,7 +175,7 @@
             takeDamage(){ if(this.isExploding||!this.active)return; this.isExploding = true; this.explosionTimer = this.explosionDuration;}
         }
         
-        // --- Player Class (MODIFIED for walk animation and corrected sprite key usage) ---
+        // --- Player Class (MODIFIED FOR 2-FRAME WALK ANIMATION) ---
         class Player { 
             constructor(gameWidth, gameHeight) {
                 console.log("Player:constructor - Initializing.");
@@ -194,132 +194,167 @@
                 this.onGround = true; 
                 this.facingDirection = 'right';
                 this.isDucking = false; 
-                this.isMovingHorizontally = false; 
+                this.isMovingHorizontally = false; // ADDED for walk animation
 
-                this.walkFrame = 0; 
-                this.walkFrameTimer = 0;
-                this.walkFrameDelay = 150;
-
+                // Walk animation properties
+                this.currentWalkFrame = 0; // 0 for primary sprite, 1 for secondary
+                this.walkAnimationTimer = 0;
+                this.walkAnimationDelay = 150; // ms per frame, adjust for speed
 
                 this.shootCooldown = 0; this.shootCooldownTime = 180;
                 this.health = 3; this.isInvincible = false;
                 this.invincibilityDuration = 1500; this.invincibilityTimer = 0;
                 
+                // Expanded _spriteMissingLogged to include new walk frames
                 this._spriteMissingLogged = { 
-                    idleLeft: false, idleRight: false,
-                    walkLeft2: false, walkRight2: false, 
-                    jumpLeft: false, jumpRight: false, 
-                    duckLeft: false, duckRight: false 
+                    'MGSpriteleft': false, 'MGSpriteright': false, 
+                    'MGSpriteleft2': false, 'MGSpriteright2': false, 
+                    'JumpLeft': false, 'JumpRight': false, 
+                    'DuckLeft': false, 'DuckRight': false 
                 };
 
-                // Corrected sprite key usage to match assetManager keys from initAndStart
-                this.spriteIdleRight = assetManager.getImage('MGSpriteright');    // Using 'MGSpriteright' key
-                this.spriteIdleLeft = assetManager.getImage('MGSpriteleft');      // Using 'MGSpriteleft' key
-                this.spriteWalkRight2 = assetManager.getImage('MGSpriteright2');  // Using 'MGSpriteright2' key
-                this.spriteWalkLeft2 = assetManager.getImage('MGSpriteleft2');    // Using 'MGSpriteleft2' key
+                // Load all player sprites, using filenames as keys
+                this.spriteWalkRight1 = assetManager.getImage('MGSpriteright'); // Primary right
+                this.spriteWalkLeft1 = assetManager.getImage('MGSpriteleft');   // Primary left
+                this.spriteWalkRight2 = assetManager.getImage('MGSpriteright2'); // Secondary right
+                this.spriteWalkLeft2 = assetManager.getImage('MGSpriteleft2');   // Secondary left
+
                 this.spriteJumpRight = assetManager.getImage('JumpRight');
                 this.spriteJumpLeft = assetManager.getImage('JumpLeft');
                 this.spriteDuckRight = assetManager.getImage('DuckRight');
                 this.spriteDuckLeft = assetManager.getImage('DuckLeft');
             }
 
-            update(input, deltaTime) { /* ... (Logic from previous correct answer) ... */ 
+            update(input, deltaTime) { 
                 const oldPlayerX = this.x; 
-                this.isMovingHorizontally = false; 
+                this.isMovingHorizontally = false; // Reset each frame
+
                 this.isDucking = input.isKeyPressed('ArrowDown') && this.onGround;
+
                 if (!this.isDucking) {
                     if (input.isKeyPressed('ArrowLeft')) { 
-                        this.x -= this.speed; this.facingDirection = 'left'; this.isMovingHorizontally = true;
+                        this.x -= this.speed; 
+                        this.facingDirection = 'left'; 
+                        this.isMovingHorizontally = true;
                     }
                     if (input.isKeyPressed('ArrowRight')) { 
-                        this.x += this.speed; this.facingDirection = 'right'; this.isMovingHorizontally = true;
+                        this.x += this.speed; 
+                        this.facingDirection = 'right'; 
+                        this.isMovingHorizontally = true;
                     }
                     if (input.isKeyPressed('ArrowUp') && this.onGround) { 
-                        this.velocityY = this.jumpStrength; this.onGround = false; this.isMovingHorizontally = false; 
+                        this.velocityY = this.jumpStrength; 
+                        this.onGround = false; 
+                        // When jumping, we are not "walking" for animation purposes
+                        this.isMovingHorizontally = false; 
                     }
                 }
+                
                 this.playerMovedX = this.x - oldPlayerX; 
+
+                // Walk Animation Update
                 if (this.isMovingHorizontally && this.onGround && !this.isDucking) {
-                    this.walkFrameTimer += deltaTime;
-                    if (this.walkFrameTimer >= this.walkFrameDelay) {
-                        this.walkFrame = 1 - this.walkFrame; 
-                        this.walkFrameTimer = 0;
+                    this.walkAnimationTimer += deltaTime;
+                    if (this.walkAnimationTimer >= this.walkAnimationDelay) {
+                        this.currentWalkFrame = 1 - this.currentWalkFrame; // Toggle 0 and 1
+                        this.walkAnimationTimer = 0;
                     }
                 } else {
-                    this.walkFrame = 0; 
-                    this.walkFrameTimer = 0;
+                    this.currentWalkFrame = 0; // Default to frame 0 (idle/primary walk)
+                    this.walkAnimationTimer = 0;
                 }
-                this.y += this.velocityY; this.velocityY += this.gravity;
+                
+                this.y += this.velocityY; 
+                this.velocityY += this.gravity;
                 const groundLevel = this.gameHeight - this.height - 10; 
-                if (this.y >= groundLevel) { this.y = groundLevel; this.velocityY = 0; this.onGround = true; }
+                if (this.y >= groundLevel) { 
+                    this.y = groundLevel; this.velocityY = 0; this.onGround = true; 
+                }
+
                 if (this.x < 0) this.x = 0;
                 if (this.x + this.width > this.gameWidth) this.x = this.gameWidth - this.width;
+                
                 if (this.shootCooldown > 0) this.shootCooldown -= deltaTime;
-                if (input.consumeShoot() && this.shootCooldown <= 0) { this.shoot(); this.shootCooldown = this.shootCooldownTime; }
+                if (input.consumeShoot() && this.shootCooldown <= 0) { 
+                    this.shoot(); this.shootCooldown = this.shootCooldownTime; 
+                }
+                
                 this.projectiles.forEach(p => p.update());
                 this.projectiles = this.projectiles.filter(p => p.active);
+                
                 if (this.isInvincible) {
                     this.invincibilityTimer -= deltaTime;
                     if (this.invincibilityTimer <= 0) this.isInvincible = false;
                 }
             }
 
-            shoot() { /* ... (no change) ... */ 
+            shoot() { /* ... (no change from your file) ... */ 
                 const projX = this.facingDirection === 'right' ? this.x + this.width : this.x - 10;
                 let projY = this.y + this.height / 2 - 2.5; 
                 this.projectiles.push(new Projectile(projX, projY, this.facingDirection, this.gameWidth));
             }
 
-            draw(ctx) { /* ... (Logic from previous correct answer) ... */ 
+            draw(ctx) { 
                 let currentSprite = null;
-                let spriteKey = ''; // For logging missing sprites accurately
+                let spriteKey = ''; // For logging
+
                 if (this.isDucking) {
-                    currentSprite = this.facingDirection === 'right' ? this.spriteDuckRight : this.spriteDuckLeft;
                     spriteKey = this.facingDirection === 'right' ? 'DuckRight' : 'DuckLeft';
-                } else if (!this.onGround) { 
-                    currentSprite = this.facingDirection === 'right' ? this.spriteJumpRight : this.spriteJumpLeft;
+                    currentSprite = this.facingDirection === 'right' ? this.spriteDuckRight : this.spriteDuckLeft;
+                } else if (!this.onGround) { // Jumping or Falling
                     spriteKey = this.facingDirection === 'right' ? 'JumpRight' : 'JumpLeft';
-                } else if (this.isMovingHorizontally) { 
-                    if (this.facingDirection === 'right') {
-                        currentSprite = this.walkFrame === 0 ? this.spriteIdleRight : this.spriteWalkRight2;
-                        spriteKey = this.walkFrame === 0 ? 'MGSpriteright' : 'MGSpriteright2';
-                    } else { 
-                        currentSprite = this.walkFrame === 0 ? this.spriteIdleLeft : this.spriteWalkLeft2;
-                        spriteKey = this.walkFrame === 0 ? 'MGSpriteleft' : 'MGSpriteleft2';
+                    currentSprite = this.facingDirection === 'right' ? this.spriteJumpRight : this.spriteJumpLeft;
+                } else { // On ground and not ducking
+                    if (this.isMovingHorizontally) { // Walking
+                        if (this.facingDirection === 'right') {
+                            spriteKey = this.currentWalkFrame === 0 ? 'MGSpriteright' : 'MGSpriteright2';
+                            currentSprite = this.currentWalkFrame === 0 ? this.spriteWalkRight1 : this.spriteWalkRight2;
+                        } else { // Facing left
+                            spriteKey = this.currentWalkFrame === 0 ? 'MGSpriteleft' : 'MGSpriteleft2';
+                            currentSprite = this.currentWalkFrame === 0 ? this.spriteWalkLeft1 : this.spriteWalkLeft2;
+                        }
+                    } else { // Idle
+                        spriteKey = this.facingDirection === 'right' ? 'MGSpriteright' : 'MGSpriteleft';
+                        currentSprite = this.facingDirection === 'right' ? this.spriteWalkRight1 : this.spriteWalkLeft1;
                     }
-                } else { 
-                    currentSprite = this.facingDirection === 'right' ? this.spriteIdleRight : this.spriteIdleLeft;
-                    spriteKey = this.facingDirection === 'right' ? 'MGSpriteright' : 'MGSpriteleft';
                 }
+                
                 if (this.isInvincible) ctx.globalAlpha = (Math.floor(Date.now() / 100) % 2 === 0) ? 0.6 : 1.0;
+                
                 let drewSprite = false;
                 if (currentSprite && currentSprite.complete && currentSprite.naturalHeight !== 0) {
-                    try { ctx.drawImage(currentSprite, this.x, this.y, this.width, this.height); drewSprite = true; } 
+                    try { 
+                        ctx.drawImage(currentSprite, this.x, this.y, this.width, this.height); 
+                        drewSprite = true; 
+                    } 
                     catch (e) { console.error("Player:draw - Error during ctx.drawImage:", e, currentSprite); }
                 }
+                
                 if (!drewSprite) {
-                    ctx.fillStyle = this.fallbackColor; ctx.fillRect(this.x, this.y, this.width, this.height);
-                    if (spriteKey && !this._spriteMissingLogged[spriteKey]) { // Use the actual key for logging
+                    ctx.fillStyle = this.fallbackColor; 
+                    ctx.fillRect(this.x, this.y, this.width, this.height);
+                    // Use the determined spriteKey for logging
+                    if (spriteKey && !this._spriteMissingLogged[spriteKey]) {
                         console.warn(`Player:draw - Fallback for sprite key "${spriteKey}". Details:`, currentSprite);
-                        this._spriteMissingLogged[spriteKey] = true; // Log missing based on actual key
+                        this._spriteMissingLogged[spriteKey] = true;
                     }
                 }
                 ctx.globalAlpha = 1.0; 
                 this.projectiles.forEach(p => p.draw(ctx));
             }
 
-            getRect() { /* ... (no change) ... */ 
+            getRect() { /* ... (no change from your file) ... */ 
                 return { x: this.x, y: this.y, width: this.width, height: this.height }; 
             }
-            takeDamage() { /* ... (no change) ... */ 
+            takeDamage() { /* ... (no change from your file) ... */ 
                 if (this.isInvincible) return false; this.health--;
                 if (this.health > 0) { this.isInvincible = true; this.invincibilityTimer = this.invincibilityDuration; }
                 return true;
             }
         }
 
-        // --- Game Class ---
-        class Game { /* ... (no change from your previous version, only initAndStart needs checking) ... */ 
+        // --- Game Class (MODIFIED initAndStart for new player sprites) ---
+        class Game { /* ... (constructor and other methods are unchanged from your file) ... */ 
             constructor(canvasId) { 
                 console.log("Game:constructor - Initializing.");
                 this.canvas = document.getElementById(canvasId);
@@ -433,17 +468,17 @@
                 this.drawPlayerHealth();
                 if (this.isGameOver) this.drawGameOverScreen();
              }
-            drawGameOverScreen() { /* ... (no change) ... */ }
+            drawGameOverScreen() { /* ... (no change from your file) ... */ }
             gameOver() { this.isGameOver = true; }
-            gameLoop(timestamp) { /* ... (no change) ... */ }
+            gameLoop(timestamp) { /* ... (no change from your file) ... */ }
 
             async initAndStart() {
                 console.log("Game:initAndStart - Starting asset loading phase.");
                 // Player Sprites - Using your specified filenames as keys
                 assetManager.loadImage('MGSpriteleft', 'MGSpriteleft.png');
                 assetManager.loadImage('MGSpriteright', 'MGSpriteright.png');
-                assetManager.loadImage('MGSpriteleft2', 'MGSpriteleft2.png'); 
-                assetManager.loadImage('MGSpriteright2', 'MGSpriteright2.png');
+                assetManager.loadImage('MGSpriteleft2', 'MGSpriteleft2.png'); // NEW
+                assetManager.loadImage('MGSpriteright2', 'MGSpriteright2.png');// NEW
                 assetManager.loadImage('JumpLeft', 'JumpLeft.png');     
                 assetManager.loadImage('JumpRight', 'JumpRight.png');   
                 assetManager.loadImage('DuckLeft', 'DuckLeft.png');     
@@ -493,7 +528,7 @@
 
         // --- Initialize Game ---
         console.log("Adding DOMContentLoaded listener.");
-        window.addEventListener('DOMContentLoaded', () => { /* ... (no change) ... */ });
+        window.addEventListener('DOMContentLoaded', () => { /* ... (no change from your file) ... */ });
         console.log("Script execution finished (initial setup).");
     </script>
 </body>
