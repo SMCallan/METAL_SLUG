@@ -79,7 +79,7 @@
         }
 
         // --- Asset Manager ---
-        // Handles loading and accessing game image and audio assets.
+        // Handles loading and accessing game image assets.
         const assetManager = {
             images: {},
             totalAssetsToLoad: 0,
@@ -97,7 +97,7 @@
                     };
                     img.onerror = (errEvent) => {
                         console.error(`AssetManager ERROR loading image ${name} from ${src}`, errEvent);
-                        this.loadedAssets++;
+                        this.loadedAssets++; // Still count as "processed" for loading bar
                         reject(new Error(`Failed to load image: ${name}`));
                     };
                 });
@@ -122,6 +122,7 @@
                     if (loadingMessageEl) loadingMessageEl.textContent = `LOADING... (${this.loadedAssets}/${this.totalAssetsToLoad})`;
                 }, 100);
 
+                // Wait for all promises (asset loads), allowing individual failures
                 return Promise.all(this._promises.map(p => p.catch(e => e)))
                     .then((results) => {
                         const successfulLoads = results.filter(r => !(r instanceof Error));
@@ -130,19 +131,20 @@
                             console.warn("AssetManager: Some assets failed to load:", results.filter(r => r instanceof Error));
                         }
                     })
-                    .catch((error) => {
+                    .catch((error) => { // Should ideally not be reached if individual promises catch
                         console.error("AssetManager: CRITICAL error during loadAll:", error);
                         if (loadingMessageEl) loadingMessageEl.textContent = 'Critical error loading assets!';
                     })
                     .finally(() => {
                         clearInterval(progressInterval);
                         if (loadingMessageEl) loadingMessageEl.style.display = 'none';
-                        this._promises = [];
+                        this._promises = []; // Clear promises for potential future loads
                     });
             },
 
             getImage(name) {
                 const img = this.images[name];
+                // Check if image exists and is loaded but broken (0 natural height)
                 if (img && img.complete && img.naturalHeight === 0) {
                     console.warn(`AssetManager: Image "${name}" appears to be broken or has an invalid path: ${img.src}`);
                 }
@@ -155,11 +157,12 @@
         class InputHandler {
             constructor() {
                 this.keys = new Set();
+                // Define relevant keys to prevent default browser actions for these keys.
                 const relevantKeys = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', ' '];
                 window.addEventListener('keydown', (e) => {
                     if (relevantKeys.includes(e.key)) {
                         e.preventDefault();
-                        this.keys.add(e.key === ' ' ? 'Space' : e.key);
+                        this.keys.add(e.key === ' ' ? 'Space' : e.key); // Normalize spacebar key
                     }
                 });
                 window.addEventListener('keyup', (e) => {
@@ -170,20 +173,21 @@
                 });
             }
             isKeyPressed(key) { return this.keys.has(key); }
-            consumeShoot() { return this.keys.has('Space'); }
+            consumeShoot() { return this.keys.has('Space'); } // Specifically for shooting action
         }
 
         // --- Projectile Class ---
         // Represents a bullet fired by the player or enemies.
         class Projectile {
-            constructor(x, y, direction, gameWidth, color = '#FFEB3B', speed = 9, width = 10, height = 5) { // Added defaults to constructor
+            constructor(x, y, direction, gameWidth, color = '#FFEB3B', speed = 9, width = 10, height = 5) {
                 this.x = x; this.y = y; this.direction = direction; this.gameWidth = gameWidth;
                 this.width = width; this.height = height; this.speed = speed;
-                this.color = color;
-                this.active = true;
+                this.color = color;     // Default bullet color, can be overridden
+                this.active = true;     // Flag for active status (used for removal)
             }
-            update() {
+            update(deltaTime) { // deltaTime added for consistency, though not used by projectile speed currently
                 this.x += (this.direction === 'right' ? this.speed : -this.speed);
+                // Deactivate if off-screen
                 if (this.x < -this.width || this.x > this.gameWidth) {
                     this.active = false;
                 }
@@ -203,21 +207,22 @@
                 this.gameWidth = gameWidth; this.width = 50;  this.height = 75;
                 this.x = x; this.y = y;
                 this.fallbackColor = '#F44336';
-                this.speed = (Math.random() * 1.0 + 0.5);
+                this.speed = (Math.random() * 1.0 + 0.5); // Randomized speed
                 this.active = true;
-                this.direction = (x < gameWidth / 2) ? 1 : -1;
+                this.direction = (x < gameWidth / 2) ? 1 : -1; // 1 for right, -1 for left
 
                 this.walkFrames = []; this.explosionSprite = null;
-                if (this.direction === 1) {
+                // Load directional sprites
+                if (this.direction === 1) { // Moving Right (uses left-facing sprites as they move towards player from right)
                     this.walkFrames = [assetManager.getImage('leftEnemyWalk1'), assetManager.getImage('leftEnemyWalk2')];
                     this.explosionSprite = assetManager.getImage('leftEnemyExplosion');
-                } else {
+                } else { // Moving Left
                     this.walkFrames = [assetManager.getImage('rightEnemyWalk1'), assetManager.getImage('rightEnemyWalk2')];
                     this.explosionSprite = assetManager.getImage('rightEnemyExplosion');
                 }
                 this.currentWalkFrameIndex = 0;
                 this.pixelsMovedSinceFrameChange = 0;
-                this.animationPixelThreshold = 20;
+                this.animationPixelThreshold = 20; // Change frame after moving this many pixels
 
                 this.isExploding = false; this.explosionDuration = 300; this.explosionTimer = 0;
                 this._spriteMissingLogged = { walk: false, explosion: false };
@@ -231,13 +236,14 @@
                 if (!this.active) return;
 
                 const oldX = this.x;
-                this.x += this.speed * this.direction;
+                this.x += this.speed * this.direction; // Movement based on speed and direction
                 const movedDistance = Math.abs(this.x - oldX);
                 this.pixelsMovedSinceFrameChange += movedDistance;
                 if (this.pixelsMovedSinceFrameChange >= this.animationPixelThreshold) {
-                    this.currentWalkFrameIndex = (this.currentWalkFrameIndex + 1) % this.walkFrames.length;
+                    this.currentWalkFrameIndex = (this.currentWalkFrameIndex + 1) % (this.walkFrames.length || 1); // Loop animation
                     this.pixelsMovedSinceFrameChange = 0;
                 }
+                // Deactivate if off-screen
                 if ((this.direction === -1 && this.x < 0 - this.width) || (this.direction === 1 && this.x > this.gameWidth + this.width)) {
                     this.active = false;
                 }
@@ -245,17 +251,17 @@
             draw(ctx) {
                 if (!this.active && !this.isExploding) return;
                 let currentSpriteToDraw = null;
-                let spriteType = '';
+                let spriteType = ''; // For logging if sprite is missing
 
                 if (this.isExploding) {
                     currentSpriteToDraw = this.explosionSprite; spriteType = 'explosion';
-                } else if (this.active && this.walkFrames.length > 0 && this.walkFrames[this.currentWalkFrameIndex]) { // Added check for frame existence
+                } else if (this.active && this.walkFrames.length > 0 && this.walkFrames[this.currentWalkFrameIndex]) {
                     currentSpriteToDraw = this.walkFrames[this.currentWalkFrameIndex]; spriteType = 'walk';
                 }
 
                 if (currentSpriteToDraw && currentSpriteToDraw.complete && currentSpriteToDraw.naturalHeight !== 0) {
                     ctx.drawImage(currentSpriteToDraw, this.x, this.y, this.width, this.height);
-                } else {
+                } else { // Fallback drawing if sprite is missing or broken
                     ctx.fillStyle = this.isExploding ? 'orange' : this.fallbackColor;
                     ctx.fillRect(this.x, this.y, this.width, this.height);
                     if (spriteType && !this._spriteMissingLogged[spriteType]) {
@@ -278,25 +284,27 @@
             constructor(x, y, gameWidth) {
                 this.gameWidth = gameWidth;
                 this.width = 48; this.height = 48; this.x = x; this.y = y;
-                this.baseY = y;
+                this.baseY = y; // Vertical center for the sine wave motion
                 this.fallbackColor = '#ADD8E6';
                 this.speed = (Math.random() * 1.5 + 1.0); this.active = true;
                 this.direction = (x < gameWidth / 2) ? 1 : -1;
 
+                // Sine wave movement parameters
                 this.waveAmplitude = 25 + (Math.random() * 20);
                 this.waveFrequency = 0.025 + (Math.random() * 0.015);
 
+                // Animation properties
                 this.animationFrames = []; this.currentFrameIndex = 0;
-                this.frameTimer = 0; this.frameDelay = 120;
+                this.frameTimer = 0; this.frameDelay = 120; // Milliseconds per animation frame
 
-                if (this.direction === 1) {
+                if (this.direction === 1) { // Moving Right
                     this.animationFrames = [assetManager.getImage('Robo1'), assetManager.getImage('Robo2'), assetManager.getImage('Robo3'), assetManager.getImage('Robo4')];
-                } else {
+                } else { // Moving Left
                     this.animationFrames = [assetManager.getImage('Robo1 copy'), assetManager.getImage('Robo2 copy'), assetManager.getImage('Robo3 copy'), assetManager.getImage('Robo4 copy')];
                 }
                 this.explosionSprite = assetManager.getImage('RoboPOP');
                 this.isExploding = false; this.explosionDuration = 300; this.explosionTimer = 0;
-                this.health = 1;
+                this.health = 1; // Dies in one hit
                 this._spriteMissingLogged = { fly: false, explosion: false };
             }
             update(deltaTime) {
@@ -308,11 +316,11 @@
                 if (!this.active) return;
 
                 this.x += this.speed * this.direction;
-                this.y = this.baseY + Math.sin(this.x * this.waveFrequency) * this.waveAmplitude;
+                this.y = this.baseY + Math.sin(this.x * this.waveFrequency) * this.waveAmplitude; // Wave motion
 
                 this.frameTimer += deltaTime;
                 if (this.frameTimer >= this.frameDelay) {
-                    this.currentFrameIndex = (this.currentFrameIndex + 1) % this.animationFrames.length;
+                    this.currentFrameIndex = (this.currentFrameIndex + 1) % (this.animationFrames.length || 1);
                     this.frameTimer = 0;
                 }
                 if ((this.direction === -1 && this.x < 0 - this.width) || (this.direction === 1 && this.x > this.gameWidth + this.width)) {
@@ -325,7 +333,7 @@
 
                 if (this.isExploding) {
                     currentSpriteToDraw = this.explosionSprite; spriteType = 'explosion';
-                } else if (this.active && this.animationFrames.length > 0 && this.animationFrames[this.currentFrameIndex]) { // Added check
+                } else if (this.active && this.animationFrames.length > 0 && this.animationFrames[this.currentFrameIndex]) {
                     currentSpriteToDraw = this.animationFrames[this.currentFrameIndex]; spriteType = 'fly';
                 }
 
@@ -356,175 +364,199 @@
             constructor(gameWidth, gameHeight, player) {
                 this.gameWidth = gameWidth;
                 this.gameHeight = gameHeight;
-                this.player = player;
+                this.player = player; // Reference to the player for targeting
 
-                this.width = 180; 
-                this.height = 150;
-                this.x = gameWidth; 
-                this.y = gameHeight * 0.15; // Positioned higher for visibility
+                this.width = 180; // Adjust based on your boss sprite's actual visual size
+                this.height = 150;// Adjust based on your boss sprite's actual visual size
+                this.x = gameWidth; // Start off-screen right
+                this.y = gameHeight * 0.15; // Positioned somewhat high to be fully visible
 
-                this.speed = 1;
+                this.speed = 1; // Speed for entering or potential movement patterns
                 this.health = 9;
                 this.maxHealth = 9;
-                this.active = true; 
-                this.isEntering = true; 
-                this.isDestroyed = false;
-                this.isFiring = false;
-                this.fallbackColor = '#800080';
+                this.active = true;       // Is the boss on screen and part of the game logic
+                this.isEntering = true;   // Special state for entering the screen
+                this.isDestroyed = false; // Has the boss been defeated
+                this.isFiring = false;    // Is the boss currently in its firing animation/state
+                this.fallbackColor = '#800080'; // Purple fallback color if sprites fail
 
-                this.stateTimer = 0;
-                this.idleDuration = 2500; 
-                this.firingDuration = 2000; 
-                this.fireCooldown = 700; 
-                this.lastShotTime = 0;
+                // Timers for state management and attacks
+                this.stateTimer = 0;         // Generic timer for current state duration
+                this.idleDuration = 2500;    // Duration of idle state in ms
+                this.firingDuration = 2000;  // Duration of firing state in ms
+                this.fireCooldown = 700;     // Time between shots while in firing state (ms)
+                this.lastShotTime = 0;       // Timer for individual shot cooldown
 
-                this.projectiles = [];
+                this.projectiles = []; // Array to hold boss's projectiles
 
+                // Assign sprites from assetManager. Assumes default facing (e.g., left)
                 this.sprites = {
-                    idle: assetManager.getImage('BOSS1'), // Assuming BOSS1 is facing left (towards player)
-                    active: assetManager.getImage('BOSS2'),
+                    idle: assetManager.getImage('BOSS1'),
+                    active: assetManager.getImage('BOSS2'), // Could be used for movement if not idle/firing
                     firing: assetManager.getImage('BOSS3'),
                     destroyed: assetManager.getImage('BOSS4'),
+                    // If boss changes facing direction, load 'R' sprites here too
+                    // idleR: assetManager.getImage('BOSS1R'), etc.
                 };
-                // Add R sprites if needed for direction change
-                // this.spritesR = { idle: assetManager.getImage('BOSS1R'), ... };
-                this.currentSprite = this.sprites.idle;
-                this.currentState = 'idle'; 
+                this.currentSprite = this.sprites.idle; // Start with idle sprite
+                this.currentState = 'idle';             // Initial state: 'idle', 'active', 'firing', 'destroyed'
 
-                this._spriteMissingLogged = {}; 
-                this.explosionTimer = 0;
-                this.explosionDuration = 1000; 
+                this._spriteMissingLogged = {}; // To prevent spamming console with missing sprite warnings
+                this.explosionTimer = 0;        // Timer for how long the destroyed sprite is shown
+                this.explosionDuration = 1000;  // Duration of destroyed state in ms
             }
 
             update(deltaTime) {
-                if (!this.active) return;
+                if (!this.active) return; // Skip updates if boss is completely inactive
 
+                // Handle destroyed state: show explosion then deactivate
                 if (this.isDestroyed) {
                     this.explosionTimer -= deltaTime;
                     if (this.explosionTimer <= 0) {
-                        this.active = false; 
+                        this.active = false; // Boss is now fully removed from game
                     }
-                    this.projectiles.forEach(p => p.update(deltaTime)); 
+                    // Update any lingering projectiles even if boss is exploding
+                    this.projectiles.forEach(p => p.update(deltaTime));
                     this.projectiles = this.projectiles.filter(p => p.active);
                     return;
                 }
 
+                // Entry phase: boss moves onto the screen
                 if (this.isEntering) {
-                    this.x -= this.speed * 0.8; 
-                    if (this.x <= this.gameWidth - this.width - 50) { 
+                    this.x -= this.speed * 0.8; // Slightly slower entry speed
+                    if (this.x <= this.gameWidth - this.width - 50) { // Stop 50px from the right edge
                         this.isEntering = false;
-                        this.x = this.gameWidth - this.width - 50;
-                        this.stateTimer = this.idleDuration; 
+                        this.x = this.gameWidth - this.width - 50; // Snap to final entry position
+                        this.stateTimer = this.idleDuration;       // Transition to idle state
                         this.currentState = 'idle';
                         this.currentSprite = this.sprites.idle;
                     }
-                    return; 
+                    return; // Skip other logic during entry
                 }
 
+                // --- Main State Machine Logic (after entry) ---
                 this.stateTimer -= deltaTime;
 
                 if (this.currentState === 'idle') {
                     this.currentSprite = this.sprites.idle;
-                    if (this.stateTimer <= 0) {
+                    if (this.stateTimer <= 0) { // Time to switch from idle to firing
                         this.currentState = 'firing';
                         this.isFiring = true;
-                        this.stateTimer = this.firingDuration;
-                        this.lastShotTime = 0; 
+                        this.stateTimer = this.firingDuration; // Set duration for firing state
+                        this.lastShotTime = 0;                 // Reset shot timer for this firing sequence
                     }
                 } else if (this.currentState === 'firing') {
                     this.currentSprite = this.sprites.firing;
                     this.lastShotTime -= deltaTime;
-                    if (this.lastShotTime <= 0) {
+                    if (this.lastShotTime <= 0) { // Time to fire a shot
                         this.shoot();
-                        this.lastShotTime = this.fireCooldown;
+                        this.lastShotTime = this.fireCooldown; // Reset cooldown for next shot
                     }
-                    if (this.stateTimer <= 0) {
-                        this.currentState = 'idle'; 
+                    if (this.stateTimer <= 0) { // Firing duration ended
+                        this.currentState = 'idle'; // Transition back to idle (or another state like 'active' for movement)
                         this.isFiring = false;
                         this.stateTimer = this.idleDuration;
-                        this.currentSprite = this.sprites.idle; 
+                        this.currentSprite = this.sprites.idle; // Or this.sprites.active
                     }
                 }
-                
+                // Future: Add an 'active' state for boss movement patterns here
+
+                // Update boss's projectiles
                 this.projectiles.forEach(p => p.update(deltaTime));
-                this.projectiles = this.projectiles.filter(p => p.active);
+                this.projectiles = this.projectiles.filter(p => p.active); // Remove inactive projectiles
             }
 
             shoot() {
-                // Adjust projectile origin based on BOSS3.png visual
-                const projX = this.x + 30; // Example: 30px from left of boss sprite
-                const projY = this.y + this.height * 0.6; // Example: 60% down boss sprite
+                // Determine projectile origin based on the boss's firing sprite (BOSS3.png)
+                // These are example values and should be adjusted to match your sprite visuals
+                const projX = this.x + 30; // Example: 30px from the left edge of the boss sprite
+                const projY = this.y + this.height * 0.6; // Example: 60% down the boss sprite's height
+                
+                // Create a new projectile instance with custom parameters for the boss
                 this.projectiles.push(new Projectile(projX, projY, 'left', this.gameWidth, '#FF6347', 4, 20, 10)); // Tomato red, slower, larger
             }
 
             draw(ctx) {
-                if (!this.active) return;
+                if (!this.active) return; // Don't draw if completely inactive
 
+                // Draw the current boss sprite
                 if (this.currentSprite && this.currentSprite.complete && this.currentSprite.naturalHeight !== 0) {
                     ctx.drawImage(this.currentSprite, this.x, this.y, this.width, this.height);
-                } else {
+                } else { // Fallback drawing if sprite is missing or broken
                     ctx.fillStyle = this.fallbackColor;
                     ctx.fillRect(this.x, this.y, this.width, this.height);
+                    // Log warning only once per missing sprite state
                     if (this.currentSprite && !this._spriteMissingLogged[this.currentState]) {
-                        console.warn(`Boss:draw - Fallback for ${this.currentState} sprite.`);
+                        console.warn(`Boss:draw - Fallback for ${this.currentState} sprite. Sprite details:`, this.currentSprite);
                         this._spriteMissingLogged[this.currentState] = true;
                     }
                 }
 
-                if (!this.isDestroyed && !this.isEntering) { // Don't show health bar during entry or after destruction
-                    const healthBarWidth = this.width * 0.8;
+                // Draw health bar (only if not destroyed and not in entry phase)
+                if (!this.isDestroyed && !this.isEntering) {
+                    const healthBarWidth = this.width * 0.8; // Health bar is 80% of boss width
                     const healthBarHeight = 10;
-                    const healthBarX = this.x + (this.width - healthBarWidth) / 2;
-                    const healthBarY = this.y - healthBarHeight - 8; // Position above boss
-                    ctx.fillStyle = '#555'; // Dark grey background for health bar
+                    const healthBarX = this.x + (this.width - healthBarWidth) / 2; // Centered horizontally
+                    const healthBarY = this.y - healthBarHeight - 8;               // Positioned above the boss
+
+                    ctx.fillStyle = '#555'; // Background of the health bar
                     ctx.fillRect(healthBarX, healthBarY, healthBarWidth, healthBarHeight);
-                    const currentHealthWidth = Math.max(0, healthBarWidth * (this.health / this.maxHealth)); // Ensure not negative
-                    ctx.fillStyle = '#FF0000'; // Red for health
+
+                    const currentHealthWidth = Math.max(0, healthBarWidth * (this.health / this.maxHealth)); // Calculate current health portion
+                    ctx.fillStyle = '#FF0000'; // Red for actual health
                     ctx.fillRect(healthBarX, healthBarY, currentHealthWidth, healthBarHeight);
-                    ctx.strokeStyle = '#333'; // Border for health bar
+
+                    ctx.strokeStyle = '#333'; // Border for the health bar
                     ctx.strokeRect(healthBarX, healthBarY, healthBarWidth, healthBarHeight);
                 }
                 
+                // Draw boss's active projectiles
                 this.projectiles.forEach(p => p.draw(ctx));
             }
 
             getRect() { return { x: this.x, y: this.y, width: this.width, height: this.height }; }
 
             takeDamage() {
-                if (this.isDestroyed || this.isEntering) return false; 
+                if (this.isDestroyed || this.isEntering) return false; // Cannot take damage if already destroyed or during entry
 
                 this.health--;
                 console.log("Boss health:", this.health);
                 if (this.health <= 0) {
-                    this.health = 0; // Prevent negative health display
+                    this.health = 0; // Ensure health doesn't display as negative
                     this.isDestroyed = true;
-                    this.currentState = 'destroyed'; // For potential specific destroyed behavior
+                    this.currentState = 'destroyed'; // Update state for clarity
                     this.currentSprite = this.sprites.destroyed;
-                    this.explosionTimer = this.explosionDuration;
-                    this.projectiles = []; // Clear any remaining projectiles from boss
-                    return true; 
+                    this.explosionTimer = this.explosionDuration; // Start timer for destroyed sprite display
+                    this.projectiles = []; // Clear any active projectiles from the boss upon defeat
+                    return true; // Boss was destroyed
                 }
-                return false; 
+                return false; // Boss took damage but was not destroyed
             }
         }
 
 
         // --- Player Class ---
+        // Represents the player character.
         class Player {
             constructor(gameWidth, gameHeight) {
                 this.gameWidth = gameWidth; this.gameHeight = gameHeight;
-                this.width = 60; this.height = 98;
-                this.x = 50; this.y = gameHeight - this.height - 10;
-                this.playerMovedX = 0;
+                this.width = 60; this.height = 98; // Player dimensions
+                this.x = 50; this.y = gameHeight - this.height - 10; // Initial position
+                this.playerMovedX = 0; // Tracks horizontal movement for parallax
                 this.fallbackColor = '#4CAF50'; this.speed = 5;
                 this.projectiles = []; this.velocityY = 0; this.gravity = 0.75;
                 this.jumpStrength = -17; this.onGround = true; this.facingDirection = 'right';
                 this.isDucking = false; this.isMovingHorizontally = false;
+
+                // Animation state
                 this.currentWalkFrame = 0; this.walkAnimationTimer = 0; this.walkAnimationDelay = 150;
-                this.shootCooldown = 0; this.shootCooldownTime = 180;
+
+                this.shootCooldown = 0; this.shootCooldownTime = 180; // Milliseconds
                 this.health = 3; this.isInvincible = false;
                 this.invincibilityDuration = 1500; this.invincibilityTimer = 0;
-                this._spriteMissingLogged = {};
+
+                this._spriteMissingLogged = {}; // Tracks if a missing sprite warning has been logged
+                // Initialize all player sprites from assetManager
                 this.spriteIdleRight = assetManager.getImage('MGSpriteright'); this.spriteIdleLeft = assetManager.getImage('MGSpriteleft');
                 this.spriteWalkRight2 = assetManager.getImage('MGSpriteright2'); this.spriteWalkLeft2 = assetManager.getImage('MGSpriteleft2');
                 this.spriteJumpRight = assetManager.getImage('JumpRight'); this.spriteJumpLeft = assetManager.getImage('JumpLeft');
@@ -543,254 +575,615 @@
                 }
                 this.playerMovedX = this.x - oldPlayerX;
 
+                // Walk animation
                 if (this.isMovingHorizontally && this.onGround && !this.isDucking) {
                     this.walkAnimationTimer += deltaTime;
-                    if (this.walkAnimationTimer >= this.walkAnimationDelay) { this.currentWalkFrame = 1 - this.currentWalkFrame; this.walkAnimationTimer = 0; }
-                } else { this.currentWalkFrame = 0; this.walkAnimationTimer = 0; }
-
-                this.y += this.velocityY; this.velocityY += this.gravity;
-                const groundLevel = this.gameHeight - this.height - 10;
-                if (this.y >= groundLevel) { this.y = groundLevel; this.velocityY = 0; this.onGround = true; }
-
-                if (this.x < 0) this.x = 0; if (this.x + this.width > this.gameWidth) this.x = this.gameWidth - this.width;
-
-                if (this.shootCooldown > 0) this.shootCooldown -= deltaTime;
-                // Player can shoot while ducking
-                if (input.consumeShoot() && this.shootCooldown <= 0) { 
-                    this.shoot(); this.shootCooldown = this.shootCooldownTime;
+                    if (this.walkAnimationTimer >= this.walkAnimationDelay) {
+                        this.currentWalkFrame = 1 - this.currentWalkFrame; // Toggle between 0 and 1
+                        this.walkAnimationTimer = 0;
+                    }
+                } else { // Reset to idle frame if not moving, ducking, or in air
+                    this.currentWalkFrame = 0;
+                    this.walkAnimationTimer = 0;
                 }
-                this.projectiles.forEach(p => p.update(deltaTime)); 
+
+                // Vertical movement and gravity
+                this.y += this.velocityY;
+                this.velocityY += this.gravity;
+                const groundLevel = this.gameHeight - this.height - 10;
+                if (this.y >= groundLevel) {
+                    this.y = groundLevel; this.velocityY = 0; this.onGround = true;
+                }
+
+                // Screen bounds
+                if (this.x < 0) this.x = 0;
+                if (this.x + this.width > this.gameWidth) this.x = this.gameWidth - this.width;
+
+                // Shooting
+                if (this.shootCooldown > 0) this.shootCooldown -= deltaTime;
+                // Player can shoot while ducking (removed !this.isDucking condition)
+                if (input.consumeShoot() && this.shootCooldown <= 0) { 
+                    this.shoot();
+                    this.shootCooldown = this.shootCooldownTime;
+                }
+                this.projectiles.forEach(p => p.update(deltaTime));
                 this.projectiles = this.projectiles.filter(p => p.active);
 
-                if (this.isInvincible) { this.invincibilityTimer -= deltaTime; if (this.invincibilityTimer <= 0) this.isInvincible = false; }
+                // Invincibility
+                if (this.isInvincible) {
+                    this.invincibilityTimer -= deltaTime;
+                    if (this.invincibilityTimer <= 0) this.isInvincible = false;
+                }
             }
 
-            updateVisualsOnly(deltaTime) { this.currentWalkFrame = 0; this.walkAnimationTimer = 0; }
+            // Used during pre-game states where player is visible but not interactive.
+            updateVisualsOnly(deltaTime) {
+                this.currentWalkFrame = 0;
+                this.walkAnimationTimer = 0;
+            }
 
             shoot() {
-                const projX = this.facingDirection === 'right' ? this.x + this.width : this.x - 10;
+                const projX = this.facingDirection === 'right' ? this.x + this.width : this.x - 10; // Bullet origin X
                 let projY;
+
                 if (this.isDucking) {
-                    // Crouching gunfire origin slightly higher
-                    projY = this.y + (this.height * 0.65) - 2.5; 
+                    // Adjust projectile Y origin when ducking.
+                    // This value (0.65) means 65% down the original player height.
+                    projY = this.y + (this.height * 0.65) - 2.5; // -2.5 to center bullet sprite vertically
                 } else {
+                    // Default projectile origin when standing or jumping
                     projY = this.y + this.height / 2 - 2.5;
                 }
-                // Using the Projectile class constructor directly
                 this.projectiles.push(new Projectile(projX, projY, this.facingDirection, this.gameWidth));
             }
+
             draw(ctx) {
-                let currentSprite = null; let spriteKey = '';
-                if (this.isDucking) { spriteKey = this.facingDirection === 'right'?'DuckRight':'DuckLeft'; currentSprite = this.facingDirection === 'right'?this.spriteDuckRight:this.spriteDuckLeft;
-                } else if (!this.onGround) { spriteKey = this.facingDirection === 'right'?'JumpRight':'JumpLeft'; currentSprite = this.facingDirection === 'right'?this.spriteJumpRight:this.spriteJumpLeft;
-                } else { if (this.isMovingHorizontally) { if (this.facingDirection === 'right') { spriteKey = this.currentWalkFrame===0?'MGSpriteright':'MGSpriteright2'; currentSprite = this.currentWalkFrame===0?this.spriteIdleRight:this.spriteWalkRight2; } else { spriteKey = this.currentWalkFrame===0?'MGSpriteleft':'MGSpriteleft2'; currentSprite = this.currentWalkFrame===0?this.spriteIdleLeft:this.spriteWalkLeft2; } } else { spriteKey = this.facingDirection === 'right'?'MGSpriteright':'MGSpriteleft'; currentSprite = this.facingDirection === 'right'?this.spriteIdleRight:this.spriteIdleLeft; } }
-                if (this.isInvincible) ctx.globalAlpha = (Math.floor(Date.now()/100)%2===0)?0.6:1.0;
-                let drewSprite = false; if (currentSprite && currentSprite.complete && currentSprite.naturalHeight !== 0) { try { ctx.drawImage(currentSprite, this.x, this.y, this.width, this.height); drewSprite = true; } catch (e) { console.error("Player:draw Error:", e, currentSprite); } }
-                if (!drewSprite) { ctx.fillStyle = this.fallbackColor; ctx.fillRect(this.x, this.y, this.width, this.height); if (spriteKey && !this._spriteMissingLogged[spriteKey]) { console.warn(`Player:draw Fallback key "${spriteKey}"`, currentSprite); this._spriteMissingLogged[spriteKey] = true; } }
-                ctx.globalAlpha = 1.0; this.projectiles.forEach(p => p.draw(ctx));
+                let currentSprite = null;
+                let spriteKey = ''; // For logging if sprite is missing
+
+                if (this.isDucking) {
+                    spriteKey = this.facingDirection === 'right' ? 'DuckRight' : 'DuckLeft';
+                    currentSprite = this.facingDirection === 'right' ? this.spriteDuckRight : this.spriteDuckLeft;
+                } else if (!this.onGround) {
+                    spriteKey = this.facingDirection === 'right' ? 'JumpRight' : 'JumpLeft';
+                    currentSprite = this.facingDirection === 'right' ? this.spriteJumpRight : this.spriteJumpLeft;
+                } else { // On ground and not ducking
+                    if (this.isMovingHorizontally) {
+                        if (this.facingDirection === 'right') {
+                            spriteKey = this.currentWalkFrame === 0 ? 'MGSpriteright' : 'MGSpriteright2';
+                            currentSprite = this.currentWalkFrame === 0 ? this.spriteIdleRight : this.spriteWalkRight2;
+                        } else {
+                            spriteKey = this.currentWalkFrame === 0 ? 'MGSpriteleft' : 'MGSpriteleft2';
+                            currentSprite = this.currentWalkFrame === 0 ? this.spriteIdleLeft : this.spriteWalkLeft2;
+                        }
+                    } else { // Idle
+                        spriteKey = this.facingDirection === 'right' ? 'MGSpriteright' : 'MGSpriteleft';
+                        currentSprite = this.facingDirection === 'right' ? this.spriteIdleRight : this.spriteIdleLeft;
+                    }
+                }
+
+                // Invincibility flash effect
+                if (this.isInvincible) {
+                    ctx.globalAlpha = (Math.floor(Date.now() / 100) % 2 === 0) ? 0.6 : 1.0;
+                }
+
+                let drewSprite = false;
+                if (currentSprite && currentSprite.complete && currentSprite.naturalHeight !== 0) {
+                    try {
+                        ctx.drawImage(currentSprite, this.x, this.y, this.width, this.height);
+                        drewSprite = true;
+                    } catch (e) {
+                        console.error("Player:draw - Error drawing sprite:", e, currentSprite);
+                    }
+                }
+                if (!drewSprite) { // Fallback drawing
+                    ctx.fillStyle = this.fallbackColor;
+                    ctx.fillRect(this.x, this.y, this.width, this.height);
+                    if (spriteKey && !this._spriteMissingLogged[spriteKey]) {
+                        console.warn(`Player:draw - Fallback for sprite key "${spriteKey}". Details:`, currentSprite);
+                        this._spriteMissingLogged[spriteKey] = true;
+                    }
+                }
+                ctx.globalAlpha = 1.0; // Reset global alpha
+                this.projectiles.forEach(p => p.draw(ctx));
             }
             getRect() { return { x: this.x, y: this.y, width: this.width, height: this.height }; }
-            takeDamage() { if (this.isInvincible) return false; this.health--; if (this.health > 0) { this.isInvincible = true; this.invincibilityTimer = this.invincibilityDuration; } return true; }
+            takeDamage() {
+                if (this.isInvincible) return false; // Already invincible
+                this.health--;
+                if (this.health > 0) {
+                    this.isInvincible = true;
+                    this.invincibilityTimer = this.invincibilityDuration;
+                }
+                return true; // Damage taken
+            }
         }
 
         // --- Game Class ---
+        // Orchestrates the game logic, state, and rendering.
         class Game {
             constructor(canvasId) {
-                this.canvas = document.getElementById(canvasId); 
+                this.canvas = document.getElementById(canvasId);
                 this.ctx = this.canvas.getContext('2d');
-                if (!this.canvas || !this.ctx) { alert("Error: Canvas not supported or found. Game cannot start."); throw new Error("Canvas initialization failed"); }
+                if (!this.canvas || !this.ctx) {
+                    alert("Error: Canvas not supported or found. Game cannot start.");
+                    throw new Error("Canvas initialization failed");
+                }
                 this.canvas.width = 960; this.canvas.height = 540;
+
                 this.inputHandler = new InputHandler();
                 this.player = null; this.enemies = []; this.score = 0; this.lastTime = 0;
                 this.animationFrameId = null;
-                this.enemySpawnTimer = 0; this.enemySpawnInterval = 2500;
-                this.gameLoop = this.gameLoop.bind(this);
-                this.backgroundSprite = null; this.foliageSprite1 = null; this.foliageSprite2 = null;
+
+                this.enemySpawnTimer = 0; this.enemySpawnInterval = 2500; // Initial spawn interval
+                this.gameLoop = this.gameLoop.bind(this); // Bind gameLoop to this instance
+
+                // Scenery
+                this.backgroundSprite = null;
+                this.foliageSprite1 = null; this.foliageSprite2 = null;
                 this.foliageX = 0; this.foliageScrollSpeedFactor = 0.3;
-                this.gameState = 'LOADING';
+
+                // Game state and UI elements
+                this.gameState = 'LOADING'; //LOADING, PRE_GAME_GET_READY, PRE_GAME_GO, RUNNING, GAME_OVER
                 this.getReadySprite = null; this.goSprite = null;
                 this.gameOverSprite = null; this.playAgainButtonSprite = null;
                 this.preGameMessageTimer = 0; this.getReadyDuration = 2000; this.goDuration = 1000;
-                this.playAgainButtonRect = null;
+
+                this.playAgainButtonRect = null; // Stores dimensions of the play again button for click detection
                 this.canvas.addEventListener('click', this.handleCanvasClick.bind(this));
 
-                this.boss = null; 
+                // Boss related properties
+                this.boss = null; // Will hold the Boss instance
                 this.bossSpawnScoreThreshold = 500;
-                this.bossHasSpawnedThisGame = false; 
+                this.bossHasSpawnedThisGame = false; // Prevent re-spawning after defeat in same game session
             }
 
             handleCanvasClick(event) {
-                if (this.gameState !== 'GAME_OVER' || !this.playAgainButtonRect) return;
-                const rect = this.canvas.getBoundingClientRect();
-                const clickX = event.clientX - rect.left; const clickY = event.clientY - rect.top;
-                if (clickX >= this.playAgainButtonRect.x && clickX <= this.playAgainButtonRect.x + this.playAgainButtonRect.width &&
-                    clickY >= this.playAgainButtonRect.y && clickY <= this.playAgainButtonRect.y + this.playAgainButtonRect.height) {
-                    this.resetGame();
+                if (this.gameState !== 'GAME_OVER' || !this.playAgainButtonRect) {
+                    return; // Only process clicks on game over screen if button is defined and drawn
                 }
-            }
-            resetGame() {
-                this.gameState = 'PRE_GAME_GET_READY'; this.preGameMessageTimer = this.getReadyDuration;
-                this.score = 0; this.enemies = []; this.enemySpawnTimer = 0; this.enemySpawnInterval = 2500;
-                this.playAgainButtonRect = null; this.canvas.classList.remove('clickable');
-                if (this.player) {
-                    this.player.x = 50; this.player.y = this.canvas.height - this.player.height - 10;
-                    this.player.velocityY = 0; this.player.onGround = true; this.player.facingDirection = 'right';
-                    this.player.health = 3; this.player.projectiles = []; this.player.isInvincible = false;
-                    this.player.invincibilityTimer = 0; this.player.isMovingHorizontally = false; this.player.currentWalkFrame = 0;
+                const rect = this.canvas.getBoundingClientRect(); // Get canvas position on page
+                const clickX = event.clientX - rect.left;
+                const clickY = event.clientY - rect.top;
+
+                // Check if click is within the bounds of the playAgainButtonRect
+                if (clickX >= this.playAgainButtonRect.x &&
+                    clickX <= this.playAgainButtonRect.x + this.playAgainButtonRect.width &&
+                    clickY >= this.playAgainButtonRect.y &&
+                    clickY <= this.playAgainButtonRect.y + this.playAgainButtonRect.height) {
+                    this.resetGame(); // Restart the game
                 }
-                this.boss = null; this.bossHasSpawnedThisGame = false;
-                console.log("Game: Game reset, boss cleared.");
             }
 
-            spawnEnemy() { /* (Code from previous version is correct) */ }
+            resetGame() {
+                this.gameState = 'PRE_GAME_GET_READY';
+                this.preGameMessageTimer = this.getReadyDuration;
+                this.score = 0; this.enemies = [];
+                this.enemySpawnTimer = 0; this.enemySpawnInterval = 2500; // Reset spawn interval
+                this.playAgainButtonRect = null; // Clear button bounds
+                this.canvas.classList.remove('clickable'); // Reset cursor
+
+                if (this.player) { // Reset player state
+                    this.player.x = 50; this.player.y = this.canvas.height - this.player.height - 10;
+                    this.player.velocityY = 0; this.player.onGround = true;
+                    this.player.facingDirection = 'right'; this.player.health = 3;
+                    this.player.projectiles = []; this.player.isInvincible = false;
+                    this.player.invincibilityTimer = 0; this.player.isMovingHorizontally = false;
+                    this.player.currentWalkFrame = 0;
+                }
+                // Reset boss state for a new game
+                this.boss = null;
+                this.bossHasSpawnedThisGame = false;
+                console.log("Game: Game reset to PRE_GAME_GET_READY state. Boss cleared.");
+            }
+
+            spawnEnemy() {
+                let newEnemy = null;
+                const spawnFlyingChance = 0.35; // 35% chance to spawn a flying enemy
+
+                if (Math.random() < spawnFlyingChance) { // Spawn Flying Enemy
+                    const enemyWidth = 48; const enemyHeight = 48;
+                    const spawnY = this.canvas.height * 0.3 + Math.random() * (this.canvas.height * 0.33); // Mid-vertical spawn
+                    let spawnX = (Math.random() < 0.5) ? (0 - (Math.random() * 50 + enemyWidth)) : (this.canvas.width + Math.random() * 50);
+                    newEnemy = new FlyingEnemy(spawnX, spawnY, this.canvas.width);
+                } else { // Spawn Ground Enemy
+                    const enemyWidth = 50; const enemyHeight = 75;
+                    const enemyY = this.canvas.height - 10 - enemyHeight; // On the ground
+                    let spawnX = (Math.random() < 0.5) ? (0 - (Math.random() * 50 + enemyWidth)) : (this.canvas.width + Math.random() * 50);
+                    newEnemy = new Enemy(spawnX, enemyY, this.canvas.width);
+                }
+                if (newEnemy) this.enemies.push(newEnemy);
+            }
+
             spawnBoss() {
                 if (!this.boss && !this.bossHasSpawnedThisGame && this.player) {
                     console.log("Game: Spawning Boss!");
                     this.boss = new Boss(this.canvas.width, this.canvas.height, this.player);
                     this.bossHasSpawnedThisGame = true;
                     this.enemies = []; // Clear regular enemies when boss appears
+                    // Optionally, dramatically increase enemySpawnInterval to stop normal spawns
+                    // this.enemySpawnInterval = Infinity; 
                 }
             }
 
             update(deltaTime) {
-                if (!this.player && this.gameState !== 'LOADING' && this.gameState !== 'GAME_OVER') { console.warn("Game: Player not initialized during an active game state:", this.gameState); return; }
-                if (this.gameState === 'GAME_OVER' && this.playAgainButtonRect) { this.canvas.classList.add('clickable'); } else { this.canvas.classList.remove('clickable'); }
-
-                switch (this.gameState) {
-                    case 'PRE_GAME_GET_READY': /* ... */ return;
-                    case 'PRE_GAME_GO': /* ... */ return;
-                    case 'GAME_OVER': return;
-                    case 'RUNNING': break;
-                    default: return;
-                }
-                 // Simplified pre-game state handling for brevity in example
-                if (this.gameState === 'PRE_GAME_GET_READY' || this.gameState === 'PRE_GAME_GO') {
-                    this.preGameMessageTimer -= deltaTime;
-                    if (this.preGameMessageTimer <= 0) {
-                        if (this.gameState === 'PRE_GAME_GET_READY') { this.gameState = 'PRE_GAME_GO'; this.preGameMessageTimer = this.goDuration; }
-                        else { this.gameState = 'RUNNING'; }
-                    }
-                    if (this.player) this.player.updateVisualsOnly(deltaTime);
+                if (!this.player && this.gameState !== 'LOADING' && this.gameState !== 'GAME_OVER') {
+                    console.warn("Game: Player not initialized during an active game state:", this.gameState);
                     return;
                 }
 
+                // Manage cursor style for clickable play again button
+                if (this.gameState === 'GAME_OVER' && this.playAgainButtonRect) {
+                    this.canvas.classList.add('clickable');
+                } else {
+                    this.canvas.classList.remove('clickable');
+                }
 
-                // Boss spawning
+                // State-specific updates
+                switch (this.gameState) {
+                    case 'PRE_GAME_GET_READY':
+                        this.preGameMessageTimer -= deltaTime;
+                        if (this.preGameMessageTimer <= 0) {
+                            this.gameState = 'PRE_GAME_GO';
+                            this.preGameMessageTimer = this.goDuration;
+                        }
+                        if (this.player) this.player.updateVisualsOnly(deltaTime);
+                        return; // Skip main game logic
+                    case 'PRE_GAME_GO':
+                        this.preGameMessageTimer -= deltaTime;
+                        if (this.preGameMessageTimer <= 0) {
+                            this.gameState = 'RUNNING';
+                        }
+                        if (this.player) this.player.updateVisualsOnly(deltaTime);
+                        return; // Skip main game logic
+                    case 'GAME_OVER':
+                        return; // No updates needed, only drawing and click handling
+                    case 'RUNNING':
+                        // Main game logic proceeds below
+                        break;
+                    default: // Includes LOADING or any other undefined state
+                        return;
+                }
+
+                // --- Main Game Logic (gameState === 'RUNNING') ---
+                
+                // Check for boss spawn condition
                 if (this.score >= this.bossSpawnScoreThreshold && !this.boss && !this.bossHasSpawnedThisGame) {
                     this.spawnBoss();
                 }
 
-                // Update Player
                 this.player.update(this.inputHandler, deltaTime);
 
-                // Update Boss OR regular enemies
+                // Update Boss OR regular enemies and their collisions
                 if (this.boss && this.boss.active) {
                     this.boss.update(deltaTime);
-                    // Player Projectiles vs Boss
+                    // Collision: Player Projectiles vs Boss
                     this.player.projectiles.forEach(proj => {
                         if (proj.active && AABBCollision(proj.getRect(), this.boss.getRect()) && !this.boss.isDestroyed && !this.boss.isEntering) {
                             proj.active = false;
-                            if (this.boss.takeDamage()) { this.score += 1000; } else { this.score += 25; }
+                            if (this.boss.takeDamage()) { // takeDamage returns true if boss was destroyed by this hit
+                                this.score += 1000; // Bonus for defeating boss
+                            } else {
+                                this.score += 25; // Score for hitting boss
+                            }
                         }
                     });
-                    // Boss Projectiles vs Player
-                    if (!this.player.isInvincible) {
+                    // Collision: Boss Projectiles vs Player
+                    if (!this.player.isInvincible) { // Player can only be hit if not invincible
                         this.boss.projectiles.forEach(bossProj => {
                             if (bossProj.active && AABBCollision(bossProj.getRect(), this.player.getRect())) {
                                 bossProj.active = false;
-                                if (this.player.takeDamage() && this.player.health <= 0) { this.gameOver(); }
+                                if (this.player.takeDamage() && this.player.health <= 0) {
+                                    this.gameOver();
+                                }
                             }
                         });
                     }
-                    // Player vs Boss Body
+                    // Collision: Player vs Boss Body (contact damage)
                      if (!this.player.isInvincible && AABBCollision(this.player.getRect(), this.boss.getRect()) && !this.boss.isDestroyed && !this.boss.isEntering) {
-                        if (this.player.takeDamage() && this.player.health <= 0) { this.gameOver(); }
+                        if (this.player.takeDamage() && this.player.health <= 0) {
+                            this.gameOver();
+                        }
                     }
-                } else { // No active boss, update regular enemies
+                } else { // No active boss, so update regular enemies
                     this.enemies.forEach(enemy => enemy.update(deltaTime));
-                    // Player Projectiles vs Enemies
-                    this.player.projectiles.forEach(proj => { this.enemies.forEach(enemy => { if (proj.active && enemy.active && !enemy.isExploding && AABBCollision(proj.getRect(), enemy.getRect())) { proj.active = false; enemy.takeDamage(); this.score += (enemy instanceof FlyingEnemy ? 75 : 50); } }); });
-                    // Player vs Enemies
-                    this.enemies.forEach(enemy => { if (enemy.active && !enemy.isExploding && AABBCollision(this.player.getRect(), enemy.getRect())) { if (this.player.takeDamage() && this.player.health <= 0) { this.gameOver(); } } });
+                    // Collision: Player Projectiles vs Enemies
+                    this.player.projectiles.forEach(proj => {
+                        this.enemies.forEach(enemy => {
+                            if (proj.active && enemy.active && !enemy.isExploding && AABBCollision(proj.getRect(), enemy.getRect())) {
+                               proj.active = false; enemy.takeDamage();
+                               this.score += (enemy instanceof FlyingEnemy ? 75 : 50);
+                            }
+                        });
+                    });
+                    // Collision: Player vs Enemies
+                    this.enemies.forEach(enemy => {
+                        if (enemy.active && !enemy.isExploding && AABBCollision(this.player.getRect(), enemy.getRect())) {
+                            if (this.player.takeDamage() && this.player.health <= 0) { this.gameOver(); }
+                        }
+                    });
                     
-                    // Regular enemy spawning
-                    if (!this.bossHasSpawnedThisGame || (this.boss && !this.boss.active)) { // Spawn if boss never appeared or is defeated
+                    // Regular enemy spawning (only if boss hasn't appeared yet, or if boss is defeated and no longer active)
+                    if (!this.bossHasSpawnedThisGame || (this.boss && !this.boss.active)) {
                         this.enemySpawnTimer += deltaTime;
                         if (this.enemySpawnTimer >= this.enemySpawnInterval) {
-                            if (this.enemies.length < 8) this.spawnEnemy();
+                            if (this.enemies.length < 8) this.spawnEnemy(); // Max 8 regular enemies
                             this.enemySpawnTimer = 0;
-                            if (this.enemySpawnInterval > 800) this.enemySpawnInterval -= 20;
+                            if (this.enemySpawnInterval > 800) this.enemySpawnInterval -= 20; // Increase spawn rate over time
                         }
                     }
                 }
                 
+                // Cleanup inactive projectiles (player's and boss's if boss exists)
                 this.player.projectiles = this.player.projectiles.filter(p => p.active);
                 if (this.boss) this.boss.projectiles = this.boss.projectiles.filter(p => p.active);
-                this.enemies = this.enemies.filter(e => e.active);
+                this.enemies = this.enemies.filter(e => e.active); // Cleanup inactive enemies
 
-                if (this.player.playerMovedX !== 0 && this.foliageSprite1 && this.foliageSprite2) { /* parallax */ }
-                this.player.playerMovedX = 0;
+                // Parallax scrolling for foliage
+                if (this.player.playerMovedX !== 0 && this.foliageSprite1 && this.foliageSprite2) {
+                    this.foliageX -= this.player.playerMovedX * this.foliageScrollSpeedFactor;
+                    const combinedFoliageWidth = this.foliageSprite1.width + this.foliageSprite2.width;
+                    if (combinedFoliageWidth > 0) { this.foliageX %= combinedFoliageWidth; } // Wrap foliage
+                }
+                this.player.playerMovedX = 0; // Reset movement tracker
             }
 
-            drawPlayerHealth() { /* (Code from previous version is correct) */ }
-            draw() {
-                /* (Background, foliage, ground drawing as before) */
-                if (this.player) this.player.draw(this.ctx);
-                /* (State-specific drawing for PRE_GAME, GAME_OVER as before) */
+            drawPlayerHealth() {
+                 if (!this.player) return;
+                this.ctx.fillStyle = 'white'; this.ctx.font = '18px "Press Start 2P"';
+                this.ctx.textAlign = 'right';
+                this.ctx.fillText(`Health: ${"❤️".repeat(this.player.health)}`, this.canvas.width - 20, 30);
+            }
 
-                if (this.gameState === 'RUNNING') {
-                    this.enemies.forEach(enemy => enemy.draw(this.ctx));
-                    if (this.boss && this.boss.active) {
-                        this.boss.draw(this.ctx);
+            draw() {
+                // Draw background
+                if (this.backgroundSprite && this.backgroundSprite.complete && this.backgroundSprite.naturalHeight !== 0) {
+                    this.ctx.drawImage(this.backgroundSprite, 0, 0, this.canvas.width, this.canvas.height);
+                } else {
+                    this.ctx.fillStyle = '#2c3e50'; this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+                }
+                // Draw parallax foliage
+                if (this.foliageSprite1 && this.foliageSprite1.complete && this.foliageSprite1.naturalHeight !== 0 &&
+                    this.foliageSprite2 && this.foliageSprite2.complete && this.foliageSprite2.naturalHeight !== 0) {
+                    const f1Width = this.foliageSprite1.width; const f2Width = this.foliageSprite2.width;
+                    const combinedWidth = f1Width + f2Width;
+                    let startX = this.foliageX % combinedWidth;
+                    if (startX > 0) startX -= combinedWidth; // Ensure continuous loop from left
+                    for (let currentX = startX; currentX < this.canvas.width; currentX += combinedWidth) {
+                         this.ctx.drawImage(this.foliageSprite1, currentX, 0, f1Width, this.canvas.height);
+                         this.ctx.drawImage(this.foliageSprite2, currentX + f1Width, 0, f2Width, this.canvas.height);
                     }
-                    this.ctx.fillStyle = 'white'; this.ctx.font = '20px "Press Start 2P"';
-                    this.ctx.textAlign = 'left'; this.ctx.fillText(`Score: ${this.score}`, 20, 30);
-                    this.drawPlayerHealth();
+                }
+                // Draw ground
+                this.ctx.fillStyle = '#7f8c8d';
+                this.ctx.fillRect(0, this.canvas.height - 10, this.canvas.width, 10);
+
+                // Draw player if initialized
+                if (this.player) {
+                    this.player.draw(this.ctx);
+                } else if (this.gameState !== 'LOADING' && this.gameState !== 'GAME_OVER') {
+                     this.ctx.fillStyle = 'white'; this.ctx.font = '20px "Press Start 2P"';
+                     this.ctx.textAlign = 'center';
+                     this.ctx.fillText('Initializing Player...', this.canvas.width / 2, this.canvas.height / 2);
+                }
+
+                // State-specific drawing
+                switch (this.gameState) {
+                    case 'PRE_GAME_GET_READY':
+                        if (this.getReadySprite && this.getReadySprite.complete && this.getReadySprite.naturalHeight !== 0) {
+                            const newWidth = this.getReadySprite.width * 0.7; const newHeight = this.getReadySprite.height * 0.7;
+                            const x = (this.canvas.width - newWidth) / 2; const y = (this.canvas.height - newHeight) / 2;
+                            this.ctx.drawImage(this.getReadySprite, x, y, newWidth, newHeight);
+                        }
+                        break;
+                    case 'PRE_GAME_GO':
+                         if (this.goSprite && this.goSprite.complete && this.goSprite.naturalHeight !== 0) {
+                            const newWidth = this.goSprite.width * 0.7; const newHeight = this.goSprite.height * 0.7;
+                            const x = (this.canvas.width - newWidth) / 2; const y = (this.canvas.height - newHeight) / 2;
+                            this.ctx.drawImage(this.goSprite, x, y, newWidth, newHeight);
+                         }
+                        break;
+                    case 'RUNNING':
+                        this.enemies.forEach(enemy => enemy.draw(this.ctx));
+                        // Draw Boss if active
+                        if (this.boss && this.boss.active) {
+                            this.boss.draw(this.ctx);
+                        }
+                        // Draw Score and Health UI
+                        this.ctx.fillStyle = 'white'; this.ctx.font = '20px "Press Start 2P"';
+                        this.ctx.textAlign = 'left'; this.ctx.fillText(`Score: ${this.score}`, 20, 30);
+                        this.drawPlayerHealth();
+                        break;
+                    case 'GAME_OVER':
+                        this.drawGameOverScreen();
+                        break;
                 }
             }
 
-            drawGameOverScreen() { /* (drawGameOverScreen from previous version with 0.15 playAgainBtnScale) */ }
-            gameOver() { this.gameState = 'GAME_OVER'; console.log("Game: Game Over."); }
-            gameLoop(timestamp) { const dT = timestamp - (this.lastTime || timestamp); this.lastTime = timestamp; this.update(dT); this.draw(); this.animationFrameId = requestAnimationFrame(this.gameLoop); }
+            /**
+             * Draws the game over screen, including the "Game Over" image, final score,
+             * and "Play Again" button.
+             */
+            drawGameOverScreen() {
+                // 1. Draw a semi-transparent overlay to darken the game scene
+                this.ctx.fillStyle = 'rgba(0, 0, 0, 0.85)'; // Dark overlay for contrast
+                this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+                // --- Define scaling factors and padding for layout ---
+                const gameOverImgScale = 0.25;  // Scale GAMEOVER.png to 25% of its original size
+                const scoreFontSize = 18;       // Font size for the "Final Score" text
+                const playAgainBtnScale = 0.15; // Scale PLAYAGAIN.png to 15% of its original size
+                
+                const verticalPaddingAfterGameOver = 20; // Vertical space after the "Game Over" image
+                const verticalPaddingAfterScore = 15;  // Vertical space after the score text
+
+                // Initial Y-coordinate for drawing, starting higher on the screen
+                let currentY = this.canvas.height * 0.12; // Start drawing elements from 12% down the canvas
+
+                // 2. Draw the "Game Over" image
+                if (this.gameOverSprite && this.gameOverSprite.complete && this.gameOverSprite.naturalHeight !== 0) {
+                    const originalWidth = this.gameOverSprite.width;
+                    const originalHeight = this.gameOverSprite.height;
+                    const newWidth = originalWidth * gameOverImgScale; 
+                    const newHeight = originalHeight * gameOverImgScale;
+
+                    const spriteX = (this.canvas.width - newWidth) / 2; // Center the image horizontally
+                    this.ctx.drawImage(this.gameOverSprite, spriteX, currentY, newWidth, newHeight);
+                    currentY += newHeight + verticalPaddingAfterGameOver; // Update currentY for the next element
+                } else { 
+                    // Fallback: Draw "GAME OVER" text if the image is missing or fails to load
+                    this.ctx.font = '30px "Press Start 2P"'; // Use a reasonably sized font for fallback
+                    this.ctx.fillStyle = '#E74C3C';           // Standard "game over" red color
+                    this.ctx.textAlign = 'center';
+                    const textMetrics = this.ctx.measureText('GAME OVER');
+                    // Estimate text height for centering; provides a default if metrics aren't available
+                    const textHeight = (textMetrics.actualBoundingBoxAscent + textMetrics.actualBoundingBoxDescent) || 30;
+                    this.ctx.fillText('GAME OVER', this.canvas.width / 2, currentY + textHeight / 2);
+                    currentY += textHeight + verticalPaddingAfterGameOver;
+                }
+
+                // 3. Draw the "Final Score" text
+                this.ctx.font = `${scoreFontSize}px "Press Start 2P"`;
+                this.ctx.fillStyle = 'white';
+                this.ctx.textAlign = 'center';
+                const scoreText = `Final Score: ${this.score}`;
+                const scoreTextEstimatedHeight = scoreFontSize * 1.2; // Estimate height for vertical positioning
+                this.ctx.fillText(scoreText, this.canvas.width / 2, currentY + scoreTextEstimatedHeight / 2);
+                currentY += scoreTextEstimatedHeight + verticalPaddingAfterScore;
+
+                // 4. Draw the "Play Again" button image
+                if (this.playAgainButtonSprite && this.playAgainButtonSprite.complete && this.playAgainButtonSprite.naturalHeight !== 0) {
+                    const btnOriginalWidth = this.playAgainButtonSprite.width;
+                    const btnOriginalHeight = this.playAgainButtonSprite.height;
+                    const newButtonWidth = btnOriginalWidth * playAgainBtnScale; 
+                    const newButtonHeight = btnOriginalHeight * playAgainBtnScale; 
+
+                    const buttonX = (this.canvas.width - newButtonWidth) / 2; // Center the button horizontally
+                    const buttonY = currentY;                                 // Position below the score
+                    this.ctx.drawImage(this.playAgainButtonSprite, buttonX, buttonY, newButtonWidth, newButtonHeight);
+                    
+                    // Store the button's dimensions and position for click detection
+                    this.playAgainButtonRect = { x: buttonX, y: buttonY, width: newButtonWidth, height: newButtonHeight };
+                } else { 
+                    // Fallback: Draw "Refresh to Play Again" text if the button image is missing
+                    this.ctx.font = '16px "Press Start 2P"'; // Smaller font for fallback text
+                    this.ctx.fillText('Refresh to Play Again', this.canvas.width / 2, currentY + (16 * 0.6) ); // Rough vertical center for text
+                    this.playAgainButtonRect = null; // No clickable sprite if using fallback text
+                }
+            }
+
+
+            gameOver() {
+                this.gameState = 'GAME_OVER';
+                console.log("Game: Game Over. State:", this.gameState);
+            }
+
+            gameLoop(timestamp) {
+                const deltaTime = timestamp - (this.lastTime || timestamp); // Calculate delta time
+                this.lastTime = timestamp;
+                this.update(deltaTime); // Update game logic
+                this.draw();           // Render the game
+                this.animationFrameId = requestAnimationFrame(this.gameLoop); // Request next frame
+            }
 
             async initAndStart() {
-                console.log("Game: Starting asset loading phase."); this.gameState = 'LOADING';
-                assetManager.loadImage('MGSpriteleft', 'MGSpriteleft.png'); assetManager.loadImage('MGSpriteright', 'MGSpriteright.png');
-                assetManager.loadImage('MGSpriteleft2', 'MGSpriteleft2.png'); assetManager.loadImage('MGSpriteright2', 'MGSpriteright2.png');
-                assetManager.loadImage('JumpLeft', 'JumpLeft.png'); assetManager.loadImage('JumpRight', 'JumpRight.png');
-                assetManager.loadImage('DuckLeft', 'DuckLeft.png'); assetManager.loadImage('DuckRight', 'DuckRight.png');
-                assetManager.loadImage('leftEnemyWalk1', 'leftenemy1.png'); assetManager.loadImage('leftEnemyWalk2', 'leftenemy2.png');
-                assetManager.loadImage('leftEnemyExplosion', 'leftenemy3.png'); assetManager.loadImage('rightEnemyWalk1', 'rightenemy1.png');
-                assetManager.loadImage('rightEnemyWalk2', 'rightenemy2.png'); assetManager.loadImage('rightEnemyExplosion', 'rightenemy3.png');
-                assetManager.loadImage('Robo1', 'Robo1.png'); assetManager.loadImage('Robo2', 'Robo2.png'); assetManager.loadImage('Robo3', 'Robo3.png'); assetManager.loadImage('Robo4', 'Robo4.png');
-                assetManager.loadImage('Robo1 copy', 'Robo1 copy.png'); assetManager.loadImage('Robo2 copy', 'Robo2 copy.png'); assetManager.loadImage('Robo3 copy', 'Robo3 copy.png'); assetManager.loadImage('Robo4 copy', 'Robo4 copy.png');
+                console.log("Game: Starting asset loading phase.");
+                this.gameState = 'LOADING';
+
+                // Load all game assets
+                assetManager.loadImage('MGSpriteleft', 'MGSpriteleft.png');
+                assetManager.loadImage('MGSpriteright', 'MGSpriteright.png');
+                assetManager.loadImage('MGSpriteleft2', 'MGSpriteleft2.png');
+                assetManager.loadImage('MGSpriteright2', 'MGSpriteright2.png');
+                assetManager.loadImage('JumpLeft', 'JumpLeft.png');
+                assetManager.loadImage('JumpRight', 'JumpRight.png');
+                assetManager.loadImage('DuckLeft', 'DuckLeft.png');
+                assetManager.loadImage('DuckRight', 'DuckRight.png');
+                assetManager.loadImage('leftEnemyWalk1', 'leftenemy1.png');
+                assetManager.loadImage('leftEnemyWalk2', 'leftenemy2.png');
+                assetManager.loadImage('leftEnemyExplosion', 'leftenemy3.png');
+                assetManager.loadImage('rightEnemyWalk1', 'rightenemy1.png');
+                assetManager.loadImage('rightEnemyWalk2', 'rightenemy2.png');
+                assetManager.loadImage('rightEnemyExplosion', 'rightenemy3.png');
+                assetManager.loadImage('Robo1', 'Robo1.png');
+                assetManager.loadImage('Robo2', 'Robo2.png');
+                assetManager.loadImage('Robo3', 'Robo3.png');
+                assetManager.loadImage('Robo4', 'Robo4.png');
+                assetManager.loadImage('Robo1 copy', 'Robo1 copy.png');
+                assetManager.loadImage('Robo2 copy', 'Robo2 copy.png');
+                assetManager.loadImage('Robo3 copy', 'Robo3 copy.png');
+                assetManager.loadImage('Robo4 copy', 'Robo4 copy.png');
                 assetManager.loadImage('RoboPOP', 'RoboPOP.png');
-                assetManager.loadImage('background', 'SettingSun.png'); assetManager.loadImage('foliage1', 'foliage1.png'); assetManager.loadImage('foliage2', 'foliage2.png');
-                assetManager.loadImage('getReady', 'GETREADY.png'); assetManager.loadImage('go', 'GO.png');
-                assetManager.loadImage('gameOverTitle', 'GAMEOVER.png'); assetManager.loadImage('playAgainButton', 'PLAYAGAIN.png');
+                assetManager.loadImage('background', 'SettingSun.png');
+                assetManager.loadImage('foliage1', 'foliage1.png');
+                assetManager.loadImage('foliage2', 'foliage2.png');
+                assetManager.loadImage('getReady', 'GETREADY.png');
+                assetManager.loadImage('go', 'GO.png');
+                assetManager.loadImage('gameOverTitle', 'GAMEOVER.png');
+                assetManager.loadImage('playAgainButton', 'PLAYAGAIN.png');
                 // Boss Sprites
                 assetManager.loadImage('BOSS1', 'BOSS1.png'); assetManager.loadImage('BOSS1R', 'BOSS1R.png');
                 assetManager.loadImage('BOSS2', 'BOSS2.png'); assetManager.loadImage('BOSS2R', 'BOSS2R.png');
                 assetManager.loadImage('BOSS3', 'BOSS3.png'); assetManager.loadImage('BOSS3R', 'BOSS3R.png');
                 assetManager.loadImage('BOSS4', 'BOSS4.png'); assetManager.loadImage('BOSS4R', 'BOSS4R.png');
 
-                try {
-                    await assetManager.loadAll(); console.log("Game: Asset loading complete.");
-                    this.backgroundSprite = assetManager.getImage('background'); this.foliageSprite1 = assetManager.getImage('foliage1'); this.foliageSprite2 = assetManager.getImage('foliage2');
-                    this.getReadySprite = assetManager.getImage('getReady'); this.goSprite = assetManager.getImage('go');
-                    this.gameOverSprite = assetManager.getImage('gameOverTitle'); this.playAgainButtonSprite = assetManager.getImage('playAgainButton');
-                } catch (err) { console.error("Game: Critical error loading assets:", err); this.gameState = 'ERROR_LOADING'; return; }
 
-                this.player = new Player(this.canvas.width, this.canvas.height); console.log("Game: Player initialized.");
-                this.resetGame();
-                if (this.animationFrameId) cancelAnimationFrame(this.animationFrameId); this.lastTime = 0;
-                console.log("Game: Starting game loop."); this.animationFrameId = requestAnimationFrame(this.gameLoop);
+                try {
+                    await assetManager.loadAll();
+                    console.log("Game: Asset loading complete.");
+                    // Assign loaded images to game properties
+                    this.backgroundSprite = assetManager.getImage('background');
+                    this.foliageSprite1 = assetManager.getImage('foliage1');
+                    this.foliageSprite2 = assetManager.getImage('foliage2');
+                    this.getReadySprite = assetManager.getImage('getReady');
+                    this.goSprite = assetManager.getImage('go');
+                    this.gameOverSprite = assetManager.getImage('gameOverTitle');
+                    this.playAgainButtonSprite = assetManager.getImage('playAgainButton');
+
+                    // Log warnings for any critical missing sprites (optional, assetManager also warns)
+                    if (!this.backgroundSprite) console.warn("Game: Background sprite not loaded!");
+                    // (Add more checks for essential sprites if desired)
+
+                } catch (err) { // This catch is for critical errors in the loadAll promise itself.
+                    console.error("Game: Critical error during assetManager.loadAll():", err);
+                    this.gameState = 'ERROR_LOADING'; // Set an error state
+                    // Potentially display an error message on the canvas
+                    return; // Stop further initialization
+                }
+
+                this.player = new Player(this.canvas.width, this.canvas.height);
+                console.log("Game: Player initialized.");
+
+                this.resetGame(); // Set initial game state (pre-game sequence)
+
+                if (this.animationFrameId) cancelAnimationFrame(this.animationFrameId); // Clear previous loop if any
+                this.lastTime = 0; // Reset lastTime for deltaTime calculation
+                console.log("Game: Starting game loop.");
+                this.animationFrameId = requestAnimationFrame(this.gameLoop);
             }
         }
 
         // --- Initialize Game ---
         console.log("Script: Adding DOMContentLoaded listener.");
-        window.addEventListener('DOMContentLoaded', () => { /* ... (DOM listener as before) ... */ });
+        window.addEventListener('DOMContentLoaded', () => {
+            console.log("Script: DOMContentLoaded event fired.");
+            try {
+                const game = new Game('gameCanvas');
+                console.log("Script: Game instance created. Calling initAndStart...");
+                game.initAndStart().catch(err => {
+                    // Catch errors from the async initAndStart promise
+                    console.error("Script: FATAL - Failed to initialize and start game (async error):", err);
+                    const loadingMessageEl = document.getElementById('loadingMessage');
+                    if (loadingMessageEl) loadingMessageEl.textContent = "FATAL ERROR starting game. Check console.";
+                    else alert("FATAL ERROR starting game. Check console.");
+                });
+            } catch (e) { // Catch synchronous errors during Game instantiation
+                console.error("Script: FATAL - Error creating Game instance (sync error):", e);
+                const loadingMessageEl = document.getElementById('loadingMessage');
+                if (loadingMessageEl) loadingMessageEl.textContent = "Critical error creating game instance. Check console.";
+                else alert("Critical error: Game could not be created. Check console.");
+            }
+         });
         console.log("Script: Initial setup execution finished.");
     </script>
 </body>
