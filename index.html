@@ -369,8 +369,7 @@
                 this.width = 180; 
                 this.height = 150;
                 this.x = gameWidth; 
-                // *** MODIFIED: Place boss on the ground level ***
-                this.y = gameHeight - 10 - this.height; // -10 for ground thickness
+                this.y = gameHeight - 10 - this.height; // Positioned on the ground level
 
                 this.speed = 1;
                 this.health = 9;
@@ -389,19 +388,14 @@
 
                 this.projectiles = [];
 
-                // *** MODIFIED: Use 'R' sprites as default for left-facing boss ***
                 // Since the boss spawns on the right and faces the player (on the left),
                 // BOSS1R (left-facing) is the default idle sprite.
                 this.sprites = {
                     idle: assetManager.getImage('BOSS1R'), 
-                    active: assetManager.getImage('BOSS2R'), // Or another appropriate left-facing sprite
+                    active: assetManager.getImage('BOSS2R'),
                     firing: assetManager.getImage('BOSS3R'),
                     destroyed: assetManager.getImage('BOSS4R'),
                 };
-                // If the boss could turn to face right (e.g., if player gets behind it),
-                // you would load BOSS1, BOSS2 etc. into a separate 'spritesRight' object
-                // and add logic to switch 'this.sprites' or 'this.currentSprite' based on direction.
-                
                 this.currentSprite = this.sprites.idle;
                 this.currentState = 'idle'; 
 
@@ -425,6 +419,7 @@
 
                 if (this.isEntering) {
                     this.x -= this.speed * 0.8; 
+                    this.y = this.gameHeight - 10 - this.height; 
                     if (this.x <= this.gameWidth - this.width - 50) { 
                         this.isEntering = false;
                         this.x = this.gameWidth - this.width - 50;
@@ -432,17 +427,10 @@
                         this.currentState = 'idle';
                         this.currentSprite = this.sprites.idle;
                     }
-                    // Ensure boss stays on ground during entry
-                    const groundY = this.gameHeight - 10 - this.height;
-                    if (this.y !== groundY) this.y = groundY;
                     return; 
                 }
                 
-                // Ensure boss stays on ground if not a flying type (can be removed if boss is meant to fly)
-                const groundY = this.gameHeight - 10 - this.height;
-                if (this.y !== groundY && !this.isDestroyed) { // Allow destroyed sprite to be wherever it ends up
-                     this.y = groundY;
-                }
+                this.y = this.gameHeight - 10 - this.height;
 
 
                 this.stateTimer -= deltaTime;
@@ -638,8 +626,8 @@
                 this.canvas.addEventListener('click', this.handleCanvasClick.bind(this));
 
                 this.boss = null; 
-                this.bossSpawnScoreThreshold = 500;
-                this.bossHasSpawnedThisGame = false; 
+                this.bossSpawnScoreInterval = 1000; // Score needed *after last boss* to spawn next one
+                this.nextBossSpawnScore = 500;     // Score at which the *first* boss will spawn
             }
 
             handleCanvasClick(event) {
@@ -661,8 +649,9 @@
                     this.player.health = 3; this.player.projectiles = []; this.player.isInvincible = false;
                     this.player.invincibilityTimer = 0; this.player.isMovingHorizontally = false; this.player.currentWalkFrame = 0;
                 }
-                this.boss = null; this.bossHasSpawnedThisGame = false;
-                console.log("Game: Game reset, boss cleared.");
+                this.boss = null; 
+                this.nextBossSpawnScore = 500; // Reset for the first boss of the new game
+                console.log("Game: Game reset, boss state cleared. Next boss at score:", this.nextBossSpawnScore);
             }
 
             spawnEnemy() {
@@ -672,11 +661,10 @@
                 if (newEnemy) this.enemies.push(newEnemy);
             }
             spawnBoss() {
-                if (!this.boss && !this.bossHasSpawnedThisGame && this.player) {
-                    console.log("Game: Spawning Boss!");
+                if (!this.boss && this.player) { // Only spawn if no current boss
+                    console.log(`Game: Spawning Boss! Current score: ${this.score}, Next boss score: ${this.nextBossSpawnScore}`);
                     this.boss = new Boss(this.canvas.width, this.canvas.height, this.player);
-                    this.bossHasSpawnedThisGame = true;
-                    this.enemies = []; 
+                    this.enemies = []; // Clear regular enemies when boss appears
                 }
             }
 
@@ -692,27 +680,65 @@
                     default: return;
                 }
 
-                if (this.score >= this.bossSpawnScoreThreshold && !this.boss && !this.bossHasSpawnedThisGame) {
+                // --- RUNNING STATE ---
+                // Check for boss spawn condition
+                if (this.score >= this.nextBossSpawnScore && !this.boss) {
                     this.spawnBoss();
                 }
 
                 this.player.update(this.inputHandler, deltaTime);
 
+                let bossDefeatedThisFrame = false;
+
                 if (this.boss && this.boss.active) {
                     this.boss.update(deltaTime);
-                    this.player.projectiles.forEach(proj => { if (proj.active && AABBCollision(proj.getRect(), this.boss.getRect()) && !this.boss.isDestroyed && !this.boss.isEntering) { proj.active = false; if (this.boss.takeDamage()) { this.score += 1000; } else { this.score += 25; } } });
+                    // Player Projectiles vs Boss
+                    this.player.projectiles.forEach(proj => { 
+                        if (proj.active && AABBCollision(proj.getRect(), this.boss.getRect()) && !this.boss.isDestroyed && !this.boss.isEntering) {
+                            proj.active = false;
+                            let regularScoreForHit = 25;
+                            this.score += regularScoreForHit; // Add score for hitting
+                            if (this.boss.takeDamage()) { // takeDamage returns true if boss was destroyed
+                                this.score += (1000 - regularScoreForHit); // Add *remaining* bonus for defeating (total 1000)
+                                bossDefeatedThisFrame = true;
+                            }
+                        }
+                    });
+                    // Boss Projectiles vs Player
                     if (!this.player.isInvincible) { this.boss.projectiles.forEach(bossProj => { if (bossProj.active && AABBCollision(bossProj.getRect(), this.player.getRect())) { bossProj.active = false; if (this.player.takeDamage() && this.player.health <= 0) { this.gameOver(); } } }); }
+                    // Player vs Boss Body
                     if (!this.player.isInvincible && AABBCollision(this.player.getRect(), this.boss.getRect()) && !this.boss.isDestroyed && !this.boss.isEntering) { if (this.player.takeDamage() && this.player.health <= 0) { this.gameOver(); } }
-                } else { 
+                
+                    if (bossDefeatedThisFrame) {
+                        this.nextBossSpawnScore = this.score + this.bossSpawnScoreInterval; // Set threshold for the NEXT boss
+                        console.log("Boss defeated! Next boss will spawn at score:", this.nextBossSpawnScore);
+                        this.boss = null; // Allow new boss to spawn after this one is fully inactive (handled by boss.active)
+                                          // The current boss instance will continue its destroyed animation.
+                    }
+                
+                } else { // No active boss, so update regular enemies
                     this.enemies.forEach(enemy => enemy.update(deltaTime));
                     this.player.projectiles.forEach(proj => { this.enemies.forEach(enemy => { if (proj.active && enemy.active && !enemy.isExploding && AABBCollision(proj.getRect(), enemy.getRect())) { proj.active = false; enemy.takeDamage(); this.score += (enemy instanceof FlyingEnemy ? 75 : 50); } }); });
                     this.enemies.forEach(enemy => { if (enemy.active && !enemy.isExploding && AABBCollision(this.player.getRect(), enemy.getRect())) { if (this.player.takeDamage() && this.player.health <= 0) { this.gameOver(); } } });
-                    if (!this.bossHasSpawnedThisGame || (this.boss && !this.boss.active)) { this.enemySpawnTimer += deltaTime; if (this.enemySpawnTimer >= this.enemySpawnInterval) { if (this.enemies.length < 8) this.spawnEnemy(); this.enemySpawnTimer = 0; if (this.enemySpawnInterval > 800) this.enemySpawnInterval -= 20; } }
+                    
+                    // Regular enemy spawning (only if no boss is currently trying to spawn or active)
+                    if (!this.boss) { 
+                        this.enemySpawnTimer += deltaTime;
+                        if (this.enemySpawnTimer >= this.enemySpawnInterval) {
+                            if (this.enemies.length < 8) this.spawnEnemy();
+                            this.enemySpawnTimer = 0;
+                            if (this.enemySpawnInterval > 800) this.enemySpawnInterval -= 20;
+                        }
+                    }
                 }
                 
                 this.player.projectiles = this.player.projectiles.filter(p => p.active);
                 if (this.boss) this.boss.projectiles = this.boss.projectiles.filter(p => p.active);
                 this.enemies = this.enemies.filter(e => e.active);
+                if (this.boss && !this.boss.active && !this.boss.isEntering) { // If boss was defeated and its animation finished
+                    this.boss = null; 
+                }
+
 
                 if (this.player.playerMovedX !== 0 && this.foliageSprite1 && this.foliageSprite2) { this.foliageX -= this.player.playerMovedX * this.foliageScrollSpeedFactor; const cFW = this.foliageSprite1.width + this.foliageSprite2.width; if (cFW > 0) { this.foliageX %= cFW; } }
                 this.player.playerMovedX = 0;
