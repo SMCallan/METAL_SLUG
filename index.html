@@ -428,18 +428,27 @@
                      this.ctx.textAlign = 'center'; this.ctx.fillText('Initializing Player...', this.canvas.width / 2, this.canvas.height / 2);
                 }
 
-
                 if (this.gameState === 'PRE_GAME_GET_READY' && this.getReadySprite) {
                     if (this.getReadySprite.complete && this.getReadySprite.naturalHeight !== 0) {
-                        const x = (this.canvas.width - this.getReadySprite.width) / 2;
-                        const y = (this.canvas.height - this.getReadySprite.height) / 2;
-                        this.ctx.drawImage(this.getReadySprite, x, y);
+                        const originalWidth = this.getReadySprite.width;
+                        const originalHeight = this.getReadySprite.height;
+                        const newWidth = originalWidth * 0.7; // 70% of original width
+                        const newHeight = originalHeight * 0.7; // 70% of original height
+                
+                        const x = (this.canvas.width - newWidth) / 2; // Center using new width
+                        const y = (this.canvas.height - newHeight) / 2; // Center using new height
+                        this.ctx.drawImage(this.getReadySprite, x, y, newWidth, newHeight); // <--- MODIFIED LINE
                     }
                 } else if (this.gameState === 'PRE_GAME_GO' && this.goSprite) {
                      if (this.goSprite.complete && this.goSprite.naturalHeight !== 0) {
-                        const x = (this.canvas.width - this.goSprite.width) / 2;
-                        const y = (this.canvas.height - this.goSprite.height) / 2;
-                        this.ctx.drawImage(this.goSprite, x, y);
+                        const originalWidth = this.goSprite.width;
+                        const originalHeight = this.goSprite.height;
+                        const newWidth = originalWidth * 0.7; // 70% of original width
+                        const newHeight = originalHeight * 0.7; // 70% of original height
+                
+                        const x = (this.canvas.width - newWidth) / 2; // Center using new width
+                        const y = (this.canvas.height - newHeight) / 2; // Center using new height
+                        this.ctx.drawImage(this.goSprite, x, y, newWidth, newHeight); // <--- MODIFIED LINE
                     }
                 } else if (this.gameState === 'RUNNING') {
                     this.enemies.forEach(enemy => enemy.draw(this.ctx));
