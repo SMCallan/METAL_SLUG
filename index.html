@@ -14,23 +14,26 @@
             align-items: center;
             justify-content: center;
             margin: 0;
-            padding-top: 10px; /* Provides some space for a potential top title */
+            padding-top: 10px;
             height: 100vh;
             overflow: hidden;
         }
-        /* Style for the new title image */
         #gameTitleImage {
-            display: block; /* Allows margin auto for centering */
-            margin: 0 auto 10px auto; /* Top, H-auto, Bottom, H-auto */
-            max-width: 90%; /* Ensure it's not wider than screen */
-            width: 350px; /* Adjust this width as desired */
-            height: auto; /* Maintain aspect ratio */
+            display: block;
+            margin: 0 auto 10px auto;
+            max-width: 90%;
+            width: 350px; /* Adjust as desired */
+            height: auto;
         }
         canvas {
             border: 4px solid #fff;
             background-color: #000;
             display: block;
             box-shadow: 0 0 15px #fff;
+            cursor: default; /* Default cursor */
+        }
+        canvas.clickable { /* Add this for the game over screen */
+            cursor: pointer;
         }
         .controls-info {
             margin-top: 10px;
@@ -48,7 +51,6 @@
     </style>
 </head>
 <body>
-    <!-- Replaced H1 with an IMG tag for the title -->
     <img id="gameTitleImage" src="METALLUGS.png" alt="Metal Lugs Title">
 
     <canvas id="gameCanvas"></canvas>
@@ -61,7 +63,7 @@
         console.log("Script execution started.");
 
         // --- Utility Functions ---
-        function AABBCollision(rect1, rect2) {
+        function AABBCollision(rect1, rect2) { /* ... (no changes) ... */
             return (
                 rect1.x < rect2.x + rect2.width &&
                 rect1.x + rect1.width > rect2.x &&
@@ -71,7 +73,7 @@
         }
 
         // --- Asset Manager ---
-        const assetManager = {
+        const assetManager = { /* ... (no changes) ... */
             images: {}, totalAssetsToLoad: 0, loadedAssets: 0, _promises: [],
             loadImage(name, src) {
                 this.totalAssetsToLoad++;
@@ -106,7 +108,7 @@
         };
 
         // --- Input Handler ---
-        class InputHandler {
+        class InputHandler { /* ... (no changes) ... */
             constructor() {
                 this.keys = new Set();
                 const relevantKeys = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', ' '];
@@ -118,7 +120,7 @@
         }
 
         // --- Projectile Class ---
-        class Projectile {
+        class Projectile { /* ... (no changes) ... */
             constructor(x, y, direction, gameWidth) { this.x = x; this.y = y; this.direction = direction; this.gameWidth = gameWidth; this.width = 10; this.height = 5; this.speed = 9; this.color = '#FFEB3B'; this.active = true; }
             update() { this.x += (this.direction === 'right' ? this.speed : -this.speed); if (this.x < -this.width || this.x > this.gameWidth) this.active = false; }
             draw(ctx) { ctx.fillStyle = this.color; ctx.fillRect(this.x, this.y, this.width, this.height); }
@@ -126,7 +128,7 @@
         }
 
         // --- Enemy Class (Ground Enemy) ---
-        class Enemy {
+        class Enemy { /* ... (no changes) ... */
              constructor(x, y, gameWidth) {
                 this.gameWidth = gameWidth; this.width = 50;  this.height = 75; this.x = x; this.y = y;
                 this.fallbackColor = '#F44336';
@@ -146,7 +148,7 @@
         }
 
         // --- FlyingEnemy Class ---
-        class FlyingEnemy {
+        class FlyingEnemy { /* ... (no changes) ... */
             constructor(x, y, gameWidth) {
                 this.gameWidth = gameWidth;
                 this.width = 48; this.height = 48; this.x = x; this.y = y;
@@ -187,7 +189,7 @@
         }
 
         // --- Player Class ---
-        class Player {
+        class Player { /* ... (no changes) ... */
             constructor(gameWidth, gameHeight) {
                 console.log("Player:constructor - Initializing.");
                 this.gameWidth = gameWidth; this.gameHeight = gameHeight;
@@ -207,7 +209,6 @@
                 this.spriteJumpRight = assetManager.getImage('JumpRight'); this.spriteJumpLeft = assetManager.getImage('JumpLeft');
                 this.spriteDuckRight = assetManager.getImage('DuckRight'); this.spriteDuckLeft = assetManager.getImage('DuckLeft');
             }
-
             update(input, deltaTime) {
                 const oldPlayerX = this.x; this.isMovingHorizontally = false;
                 this.isDucking = input.isKeyPressed('ArrowDown') && this.onGround;
@@ -230,19 +231,16 @@
                 this.projectiles.forEach(p => p.update()); this.projectiles = this.projectiles.filter(p => p.active);
                 if (this.isInvincible) { this.invincibilityTimer -= deltaTime; if (this.invincibilityTimer <= 0) this.isInvincible = false; }
             }
-
             updateVisualsOnly(deltaTime) {
                 if (this.onGround && !this.isMovingHorizontally && !this.isDucking) {
                      this.currentWalkFrame = 0; this.walkAnimationTimer = 0;
                 }
             }
-
             shoot() {
                 const projX = this.facingDirection === 'right' ? this.x + this.width : this.x - 10;
                 let projY = this.y + this.height / 2 - 2.5;
                 this.projectiles.push(new Projectile(projX, projY, this.facingDirection, this.gameWidth));
             }
-
             draw(ctx) {
                 let currentSprite = null; let spriteKey = '';
                 if (this.isDucking) { spriteKey = this.facingDirection === 'right' ? 'DuckRight' : 'DuckLeft'; currentSprite = this.facingDirection === 'right' ? this.spriteDuckRight : this.spriteDuckLeft; }
@@ -278,17 +276,46 @@
                 this.gameState = 'LOADING';
                 this.getReadySprite = null;
                 this.goSprite = null;
-                this.gameOverSprite = null; // +++ For GAMEOVER.png
+                this.gameOverSprite = null;
+                this.playAgainButtonSprite = null; // +++ For PLAYAGAIN.png
                 this.preGameMessageTimer = 0;
                 this.getReadyDuration = 2000;
                 this.goDuration = 1000;
+
+                this.playAgainButtonRect = null; // For click detection
+                this.canvas.addEventListener('click', this.handleCanvasClick.bind(this));
             }
+
+            // +++ NEW: Handle canvas clicks, primarily for game over button +++
+            handleCanvasClick(event) {
+                if (this.gameState !== 'GAME_OVER' || !this.playAgainButtonRect) {
+                    return;
+                }
+
+                const rect = this.canvas.getBoundingClientRect();
+                const clickX = event.clientX - rect.left;
+                const clickY = event.clientY - rect.top;
+
+                if (clickX >= this.playAgainButtonRect.x &&
+                    clickX <= this.playAgainButtonRect.x + this.playAgainButtonRect.width &&
+                    clickY >= this.playAgainButtonRect.y &&
+                    clickY <= this.playAgainButtonRect.y + this.playAgainButtonRect.height) {
+                    
+                    console.log("Play Again button clicked!");
+                    this.resetGame();
+                    // resetGame() sets gameState to PRE_GAME_GET_READY, game loop will pick it up.
+                }
+            }
+
 
             resetGame() {
                 this.gameState = 'PRE_GAME_GET_READY';
                 this.preGameMessageTimer = this.getReadyDuration;
                 this.score = 0; this.enemies = []; this.enemySpawnTimer = 0;
                 this.enemySpawnInterval = 2500;
+                this.playAgainButtonRect = null; // Clear button rect
+                this.canvas.classList.remove('clickable'); // Reset cursor
+
                 if (this.player) {
                     this.player.x = 50; this.player.y = this.canvas.height - this.player.height - 10;
                     this.player.velocityY = 0; this.player.onGround = true; this.player.facingDirection = 'right';
@@ -298,7 +325,7 @@
                 console.log("Game reset, state:", this.gameState);
             }
 
-            spawnEnemy() {
+            spawnEnemy() { /* ... (no changes) ... */
                 let newEnemy = null; const spawnFlyingChance = 0.35;
                 if (Math.random() < spawnFlyingChance) {
                     const enemyHeight = 48; const enemyWidth = 48;
@@ -314,8 +341,17 @@
                 if (newEnemy) { this.enemies.push(newEnemy); }
             }
 
-            update(deltaTime) {
+            update(deltaTime) { /* ... (no changes to core update logic, only cursor update) ... */
                 if (!this.player && this.gameState !== 'LOADING' && this.gameState !== 'GAME_OVER') { console.warn("Player not initialized, but game state is active. State:", this.gameState); return; }
+
+                // Update cursor based on game state (specifically for play again button)
+                if (this.gameState === 'GAME_OVER' && this.playAgainButtonRect) {
+                    this.canvas.classList.add('clickable');
+                } else {
+                    this.canvas.classList.remove('clickable');
+                }
+
+
                 if (this.gameState === 'PRE_GAME_GET_READY') {
                     this.preGameMessageTimer -= deltaTime; if (this.preGameMessageTimer <= 0) { this.gameState = 'PRE_GAME_GO'; this.preGameMessageTimer = this.goDuration; }
                     if (this.player) this.player.updateVisualsOnly(deltaTime); return;
@@ -348,13 +384,13 @@
                     if (this.enemySpawnInterval > 800) this.enemySpawnInterval -= 20; }
             }
 
-            drawPlayerHealth() {
+            drawPlayerHealth() { /* ... (no changes) ... */
                  if (!this.player) return;
                 this.ctx.fillStyle = 'white'; this.ctx.font = '18px "Press Start 2P"'; this.ctx.textAlign = 'right';
                 this.ctx.fillText(`Health: ${"❤️".repeat(this.player.health)}`, this.canvas.width - 20, 30);
             }
 
-            draw() {
+            draw() { /* ... (no changes to general drawing, only game over part handled by drawGameOverScreen) ... */
                 if (this.backgroundSprite && this.backgroundSprite.complete && this.backgroundSprite.naturalHeight !== 0) { this.ctx.drawImage(this.backgroundSprite, 0, 0, this.canvas.width, this.canvas.height); }
                 else { this.ctx.fillStyle = '#2c3e50'; this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height); }
                 if (this.foliageSprite1 && this.foliageSprite1.complete && this.foliageSprite1.naturalHeight !== 0 && this.foliageSprite2 && this.foliageSprite2.complete && this.foliageSprite2.naturalHeight !== 0) {
@@ -391,47 +427,76 @@
                 }
             }
 
+            // +++ MODIFIED drawGameOverScreen +++
             drawGameOverScreen() {
-                this.ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+                // 1. Draw dark overlay
+                this.ctx.fillStyle = 'rgba(0, 0, 0, 0.80)'; // Slightly darker overlay
                 this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
-                let spriteYOffset = 0; // How much vertical space the GAMEOVER sprite takes
+                let currentY = this.canvas.height * 0.22; // Start drawing elements from this Y position
 
+                // 2. Draw GAMEOVER.png
                 if (this.gameOverSprite && this.gameOverSprite.complete && this.gameOverSprite.naturalHeight !== 0) {
                     const originalWidth = this.gameOverSprite.width;
                     const originalHeight = this.gameOverSprite.height;
-                    const scaleFactor = 0.7; // Adjust scale as needed (70%)
+                    const scaleFactor = 0.6; // Scale to 60%
                     const newWidth = originalWidth * scaleFactor;
                     const newHeight = originalHeight * scaleFactor;
 
                     const spriteX = (this.canvas.width - newWidth) / 2;
-                    const spriteY = this.canvas.height / 2 - newHeight - 20; // Positioned above center
-                    this.ctx.drawImage(this.gameOverSprite, spriteX, spriteY, newWidth, newHeight);
-                    spriteYOffset = spriteY + newHeight; // Bottom edge of the GAMEOVER sprite
+                    this.ctx.drawImage(this.gameOverSprite, spriteX, currentY, newWidth, newHeight);
+                    currentY += newHeight + 50; // Add height of GAMEOVER sprite + padding
                 } else {
                     // Fallback text if GAMEOVER.png sprite fails
                     this.ctx.font = '48px "Press Start 2P"';
                     this.ctx.fillStyle = '#E74C3C';
                     this.ctx.textAlign = 'center';
-                    this.ctx.fillText('GAME OVER', this.canvas.width / 2, this.canvas.height / 2 - 40);
-                    spriteYOffset = this.canvas.height / 2 - 40 + 30; // Approx bottom of text
+                    const textMetrics = this.ctx.measureText('GAME OVER'); // Get text height roughly
+                    const textHeight = textMetrics.actualBoundingBoxAscent + textMetrics.actualBoundingBoxDescent || 48;
+                    this.ctx.fillText('GAME OVER', this.canvas.width / 2, currentY + textHeight/2);
+                    currentY += textHeight + 50;
                 }
 
-                // Draw text below the GAMEOVER sprite or fallback text
+                // 3. Draw "Final Score: [score]"
                 this.ctx.font = '24px "Press Start 2P"';
                 this.ctx.fillStyle = 'white';
                 this.ctx.textAlign = 'center';
-                this.ctx.fillText(`Final Score: ${this.score}`, this.canvas.width / 2, spriteYOffset + 60);
-                this.ctx.fillText('Refresh to Play Again', this.canvas.width / 2, spriteYOffset + 110);
+                const scoreText = `Final Score: ${this.score}`;
+                const scoreTextMetrics = this.ctx.measureText(scoreText);
+                const scoreTextHeight = scoreTextMetrics.actualBoundingBoxAscent + scoreTextMetrics.actualBoundingBoxDescent || 24;
+                this.ctx.fillText(scoreText, this.canvas.width / 2, currentY + scoreTextHeight/2);
+                currentY += scoreTextHeight + 40; // Add height of score text + padding
+
+                // 4. Draw PLAYAGAIN.png button
+                if (this.playAgainButtonSprite && this.playAgainButtonSprite.complete && this.playAgainButtonSprite.naturalHeight !== 0) {
+                    const btnOriginalWidth = this.playAgainButtonSprite.width;
+                    const btnOriginalHeight = this.playAgainButtonSprite.height;
+                    const btnScaleFactor = 0.5; // Scale to 50% - make it quite small
+                    const newButtonWidth = btnOriginalWidth * btnScaleFactor;
+                    const newButtonHeight = btnOriginalHeight * btnScaleFactor;
+
+                    const buttonX = (this.canvas.width - newButtonWidth) / 2;
+                    const buttonY = currentY;
+                    this.ctx.drawImage(this.playAgainButtonSprite, buttonX, buttonY, newButtonWidth, newButtonHeight);
+                    
+                    // Store its bounds for click detection
+                    this.playAgainButtonRect = { x: buttonX, y: buttonY, width: newButtonWidth, height: newButtonHeight };
+                } else {
+                    // Fallback text for button
+                    this.ctx.font = '20px "Press Start 2P"'; // Smaller font for fallback
+                    this.ctx.fillText('Refresh to Play Again', this.canvas.width / 2, currentY + 10); // +10 for rough centering
+                    this.playAgainButtonRect = null; // No button to click if it's text
+                }
             }
 
 
             gameOver() {
                 this.gameState = 'GAME_OVER';
+                this.canvas.classList.add('clickable'); // Make canvas cursor pointer
                 console.log("Game Over. State:", this.gameState);
             }
 
-            gameLoop(timestamp) {
+            gameLoop(timestamp) { /* ... (no changes) ... */
                 const deltaTime = timestamp - (this.lastTime || timestamp); this.lastTime = timestamp;
                 this.update(deltaTime); this.draw();
                 this.animationFrameId = requestAnimationFrame(this.gameLoop);
@@ -439,6 +504,7 @@
 
             async initAndStart() {
                 console.log("Game:initAndStart - Starting asset loading phase."); this.gameState = 'LOADING';
+                // ... (all previous assetManager.loadImage calls remain the same) ...
                 assetManager.loadImage('MGSpriteleft', 'MGSpriteleft.png'); assetManager.loadImage('MGSpriteright', 'MGSpriteright.png');
                 assetManager.loadImage('MGSpriteleft2', 'MGSpriteleft2.png'); assetManager.loadImage('MGSpriteright2', 'MGSpriteright2.png');
                 assetManager.loadImage('JumpLeft', 'JumpLeft.png'); assetManager.loadImage('JumpRight', 'JumpRight.png');
@@ -453,19 +519,24 @@
                 assetManager.loadImage('RoboPOP', 'RoboPOP.png');
                 assetManager.loadImage('background', 'SettingSun.png'); assetManager.loadImage('foliage1', 'foliage1.png'); assetManager.loadImage('foliage2', 'foliage2.png');
                 assetManager.loadImage('getReady', 'GETREADY.png'); assetManager.loadImage('go', 'GO.png');
-                assetManager.loadImage('gameOverTitle', 'GAMEOVER.png'); // +++ Load GAMEOVER.png
+                assetManager.loadImage('gameOverTitle', 'GAMEOVER.png');
+                assetManager.loadImage('playAgainButton', 'PLAYAGAIN.png'); // +++ Load PLAYAGAIN.png
 
                 try {
                     await assetManager.loadAll(); console.log("Game:initAndStart - Asset loading complete.");
                     this.backgroundSprite = assetManager.getImage('background');
                     this.foliageSprite1 = assetManager.getImage('foliage1'); this.foliageSprite2 = assetManager.getImage('foliage2');
+                    this.getReadySprite = assetManager.getImage('getReady'); this.goSprite = assetManager.getImage('go');
+                    this.gameOverSprite = assetManager.getImage('gameOverTitle');
+                    this.playAgainButtonSprite = assetManager.getImage('playAgainButton'); // +++ Store PLAYAGAIN.png
+
                     if (!this.backgroundSprite) console.warn("Background sprite not loaded!");
                     if (!this.foliageSprite1 || !this.foliageSprite2) console.warn("One or both foliage sprites not loaded!");
-                    this.getReadySprite = assetManager.getImage('getReady'); this.goSprite = assetManager.getImage('go');
-                    this.gameOverSprite = assetManager.getImage('gameOverTitle'); // +++ Store GAMEOVER.png
                     if (!this.getReadySprite) console.warn("GETREADY.png sprite not loaded!");
                     if (!this.goSprite) console.warn("GO.png sprite not loaded!");
                     if (!this.gameOverSprite) console.warn("GAMEOVER.png sprite not loaded!");
+                    if (!this.playAgainButtonSprite) console.warn("PLAYAGAIN.png sprite not loaded!");
+
                 } catch (err) { console.error("Game:initAndStart - Error during assetManager.loadAll():", err); this.gameState = 'ERROR_LOADING'; return; }
 
                 this.player = new Player(this.canvas.width, this.canvas.height); console.log("Game:initAndStart - Player initialized.");
@@ -477,7 +548,7 @@
 
         // --- Initialize Game ---
         console.log("Adding DOMContentLoaded listener.");
-        window.addEventListener('DOMContentLoaded', () => {
+        window.addEventListener('DOMContentLoaded', () => { /* ... (no changes) ... */
             console.log("DOMContentLoaded event fired.");
             try {
                 const game = new Game('gameCanvas');
