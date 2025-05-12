@@ -584,7 +584,6 @@
                 const projX = this.facingDirection === 'right' ? this.x + this.width : this.x - 10;
                 let projY;
                 projY = this.y + this.height / 2 - 2.5;
-                }
                 this.projectiles.push(new Projectile(projX, projY, this.facingDirection, this.gameWidth));
             }
             draw(ctx) {
