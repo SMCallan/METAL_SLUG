@@ -583,10 +583,7 @@
             shoot() {
                 const projX = this.facingDirection === 'right' ? this.x + this.width : this.x - 10;
                 let projY;
-                if (this.isDucking) {
-                    projY = this.y + (this.height * 0.65) - 2.5; 
-                } else {
-                    projY = this.y + this.height / 2 - 2.5;
+                projY = this.y + this.height / 2 - 2.5;
                 }
                 this.projectiles.push(new Projectile(projX, projY, this.facingDirection, this.gameWidth));
             }
