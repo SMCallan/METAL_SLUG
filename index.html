@@ -55,7 +55,7 @@
 
     <canvas id="gameCanvas"></canvas>
     <div class="controls-info">
-        <p>Controls: Arrow Keys (Move/Jump/Duck), Spacebar (Shoot)</p>
+        <p>Controls: Arrow Keys (Move/Jump/Duck), Spacebar ()</p>
         <p id="loadingMessage">LOADING ASSETS...</p>
     </div>
 
@@ -172,7 +172,7 @@
                 });
             }
             isKeyPressed(key) { return this.keys.has(key); }
-            consumeShoot() { return this.keys.has('Space'); }
+            consume() { return this.keys.has('Space'); }
         }
 
         // --- Projectile Class ---
@@ -406,7 +406,7 @@
                     }
                 } else if (this.currentState === 'firing') {
                     this.currentSprite = this.sprites.firing; this.lastShotTime -= deltaTime;
-                    if (this.lastShotTime <= 0) { this.shoot(); this.lastShotTime = this.fireCooldown; }
+                    if (this.lastShotTime <= 0) { this.(); this.lastShotTime = this.fireCooldown; }
                     if (this.stateTimer <= 0) {
                         this.currentState = 'idle'; this.isFiring = false;
                         this.stateTimer = this.idleDuration; this.currentSprite = this.sprites.idle;
@@ -570,8 +570,8 @@
 
                     if (projSprite && projSprite.complete && projSprite.naturalHeight !== 0) {
                         // Use sprite's dimensions, or scale them if too large
-                        projWidth = projSprite.width > 24 ? projSprite.width / 1.5 : projSprite.width; // Example: scale if original > 40px
-                        projHeight = projSprite.height > 12 ? projSprite.height / 1.5 : projSprite.height;
+                        projWidth = projSprite.width > 24 ? projSprite.width / 4 : projSprite.width; // Example: scale if original > 40px
+                        projHeight = projSprite.height > 12 ? projSprite.height / 4 : projSprite.height;
                     } else { // Fallback if plasma sprite isn't loaded
                         projWidth = 20; projHeight = 10; projColor = '#00FFFF'; // Teal plasma-like color
                         console.warn("Player.shoot: Plasma sprite not loaded, using fallback.");
