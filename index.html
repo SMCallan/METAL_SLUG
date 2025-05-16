@@ -624,6 +624,14 @@
                 this.boss = null; 
                 this.bossSpawnScoreInterval = 1000; // Score needed *after last boss* to spawn next one
                 this.nextBossSpawnScore = 500;     // Score at which the *first* boss will spawn
+
+                // +++ NEW: PROPERTIES FOR HEART SPRITES +++
+                this.heartSpriteFull = null;
+                this.heartSpriteDamaged = null;
+                this.heartSpriteCritical = null;
+                this.heartSpriteDisplayWidth = 48;  // Desired width for the heart on screen
+                this.heartSpriteDisplayHeight = 48; // Desired height for the heart on screen
+                // +++ END OF NEW PROPERTIES +++
             }
 
             handleCanvasClick(event) {
@@ -740,7 +748,51 @@
                 this.player.playerMovedX = 0;
             }
 
-            drawPlayerHealth() { if (!this.player) return; this.ctx.fillStyle = 'white'; this.ctx.font = '18px "Press Start 2P"'; this.ctx.textAlign = 'right'; this.ctx.fillText(`Health: ${"❤️".repeat(this.player.health)}`, this.canvas.width - 20, 30); }
+            // --- MODIFIED: drawPlayerHealth method ---
+            drawPlayerHealth() {
+                if (!this.player) return;
+
+                let currentHeartSprite = null;
+
+                if (this.player.health === 3) {
+                    currentHeartSprite = this.heartSpriteFull;
+                } else if (this.player.health === 2) {
+                    currentHeartSprite = this.heartSpriteDamaged;
+                } else if (this.player.health === 1) {
+                    currentHeartSprite = this.heartSpriteCritical;
+                }
+                // If player.health is 0 or less, no heart is drawn.
+                // The game over screen will take precedence.
+
+                if (currentHeartSprite && currentHeartSprite.complete && currentHeartSprite.naturalHeight !== 0) {
+                    // Position the heart sprite (e.g., top-right corner)
+                    const heartX = this.canvas.width - this.heartSpriteDisplayWidth - 20; // 20px padding from right edge
+                    const heartY = 10; // 10px padding from top edge
+
+                    this.ctx.drawImage(
+                        currentHeartSprite,
+                        heartX,
+                        heartY,
+                        this.heartSpriteDisplayWidth,
+                        this.heartSpriteDisplayHeight
+                    );
+                } else if (this.player.health > 0) {
+                    // Fallback: If sprites are missing/not loaded but player is alive, show text health
+                    this.ctx.fillStyle = 'white';
+                    this.ctx.font = '18px "Press Start 2P"';
+                    this.ctx.textAlign = 'right';
+                    this.ctx.fillText(`HP: ${this.player.health}`, this.canvas.width - 20, 30);
+
+                    // Log a warning to the console for debugging
+                    if (!currentHeartSprite) {
+                        console.warn(`Game.drawPlayerHealth: No heart sprite determined for health state ${this.player.health}. Check if 'heartFull', 'heartDamaged', 'heartCritical' assets are loaded and assigned.`);
+                    } else {
+                        console.warn(`Game.drawPlayerHealth: Heart sprite for health state ${this.player.health} (${currentHeartSprite.src}) is not loaded or broken.`);
+                    }
+                }
+            }
+            // --- END OF MODIFIED drawPlayerHealth ---
+
             draw() {
                 if (this.backgroundSprite && this.backgroundSprite.complete && this.backgroundSprite.naturalHeight !== 0) { this.ctx.drawImage(this.backgroundSprite, 0, 0, this.canvas.width, this.canvas.height); } else { this.ctx.fillStyle = '#2c3e50'; this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height); }
                 if (this.foliageSprite1 && this.foliageSprite1.complete && this.foliageSprite1.naturalHeight !==0 && this.foliageSprite2 && this.foliageSprite2.complete && this.foliageSprite2.naturalHeight !== 0) { const f1W=this.foliageSprite1.width; const f2W=this.foliageSprite2.width; const cW=f1W+f2W; let sX=this.foliageX%cW; if(sX>0)sX-=cW; for(let cX=sX;cX<this.canvas.width;cX+=cW){this.ctx.drawImage(this.foliageSprite1,cX,0,f1W,this.canvas.height); this.ctx.drawImage(this.foliageSprite2,cX+f1W,0,f2W,this.canvas.height);}}
@@ -782,11 +834,24 @@
                 assetManager.loadImage('BOSS3', 'BOSS3.png'); assetManager.loadImage('BOSS3R', 'BOSS3R.png');
                 assetManager.loadImage('BOSS4', 'BOSS4.png'); assetManager.loadImage('BOSS4R', 'BOSS4R.png');
 
+                // +++ NEW: LOAD YOUR HEART SPRITES +++
+                assetManager.loadImage('heartFull', 'HEARTONE.png');
+                assetManager.loadImage('heartDamaged', 'HEARTTWO.png');
+                assetManager.loadImage('heartCritical', 'HEARTTHREE.png');
+                // +++ END OF NEW LOAD LINES +++
+
                 try {
                     await assetManager.loadAll(); console.log("Game: Asset loading complete.");
                     this.backgroundSprite = assetManager.getImage('background'); this.foliageSprite1 = assetManager.getImage('foliage1'); this.foliageSprite2 = assetManager.getImage('foliage2');
                     this.getReadySprite = assetManager.getImage('getReady'); this.goSprite = assetManager.getImage('go');
                     this.gameOverSprite = assetManager.getImage('gameOverTitle'); this.playAgainButtonSprite = assetManager.getImage('playAgainButton');
+                    
+                    // +++ NEW: ASSIGN LOADED HEART SPRITES +++
+                    this.heartSpriteFull = assetManager.getImage('heartFull');
+                    this.heartSpriteDamaged = assetManager.getImage('heartDamaged');
+                    this.heartSpriteCritical = assetManager.getImage('heartCritical');
+                    // +++ END OF NEW ASSIGNMENT LINES +++
+
                     if (!this.backgroundSprite) console.warn("Game: Background sprite not loaded!");
                 } catch (err) { console.error("Game: Critical error loading assets:", err); this.gameState = 'ERROR_LOADING'; return; }
 
