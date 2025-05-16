@@ -570,8 +570,8 @@
 
                     if (projSprite && projSprite.complete && projSprite.naturalHeight !== 0) {
                         // Use sprite's dimensions, or scale them if too large
-                        projWidth = projSprite.width > 40 ? projSprite.width / 1.5 : projSprite.width; // Example: scale if original > 40px
-                        projHeight = projSprite.height > 20 ? projSprite.height / 1.5 : projSprite.height;
+                        projWidth = projSprite.width > 24 ? projSprite.width / 1.5 : projSprite.width; // Example: scale if original > 40px
+                        projHeight = projSprite.height > 12 ? projSprite.height / 1.5 : projSprite.height;
                     } else { // Fallback if plasma sprite isn't loaded
                         projWidth = 20; projHeight = 10; projColor = '#00FFFF'; // Teal plasma-like color
                         console.warn("Player.shoot: Plasma sprite not loaded, using fallback.");
@@ -629,14 +629,14 @@
                 this.heartSpriteFull = null;
                 this.heartSpriteDamaged = null;
                 this.heartSpriteCritical = null;
-                this.heartSpriteDisplayWidth = 48; // Adjusted to a more common sprite size
-                this.heartSpriteDisplayHeight = 48;
+                this.heartSpriteDisplayWidth = 68; // Adjusted to a more common sprite size
+                this.heartSpriteDisplayHeight = 68;
 
                 // Pickup related properties
                 this.pickupItems = [];
                 this.plasBoxSprite = null; // Will be assigned after loading
-                this.plasBoxDisplayWidth = 40; // Adjust as needed for PlasBox.png visual size
-                this.plasBoxDisplayHeight = 40;
+                this.plasBoxDisplayWidth = 70; // Adjust as needed for PlasBox.png visual size
+                this.plasBoxDisplayHeight = 70;
             }
 
             handleCanvasClick(event) {
