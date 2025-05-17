@@ -25,9 +25,8 @@
             width: 350px;
             height: auto;
         }
-        /* NEW: Game Settings Styles */
         .game-settings {
-            margin-bottom: 10px; /* Space before canvas */
+            margin-bottom: 10px;
             font-size: 0.8em;
             color: #ccc;
             background-color: rgba(0,0,0,0.5);
@@ -43,7 +42,6 @@
             vertical-align: middle;
             margin-right: 3px;
         }
-
         canvas {
             border: 4px solid #fff;
             background-color: #000;
@@ -72,7 +70,6 @@
 <body>
     <img id="gameTitleImage" src="METALLUGS.png" alt="Metal Lugs Title">
 
-    <!-- NEW: Game Settings UI -->
     <div class="game-settings">
         <span>Speed:</span>
         <label><input type="radio" name="speedSetting" value="normal" checked> Normal</label>
@@ -88,13 +85,74 @@
     <script>
         console.log("Script execution started.");
 
-        // --- Global Constants ---
-        const NORMAL_FRAME_DURATION_MS = 1000 / 60; // Approx 16.667ms
+        // --- Global Constants & Audio ---
+        const NORMAL_FRAME_DURATION_MS = 1000 / 60;
+        let audioCtx; // Will be initialized on first sound play or user interaction
+
+        function getAudioContext() {
+            if (!audioCtx) {
+                try {
+                    // Create AudioContext after a user gesture (like a click) for browser compatibility
+                    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                } catch (e) {
+                    console.error("Web Audio API is not supported in this browser.", e);
+                    return null;
+                }
+            }
+            // If context is suspended, resume it (often needed after user gesture)
+            if (audioCtx && audioCtx.state === 'suspended') {
+                audioCtx.resume().catch(e => console.error("Error resuming AudioContext:", e));
+            }
+            return audioCtx;
+        }
+
+        function playClickSound() {
+            const context = getAudioContext();
+            if (!context || context.state !== 'running') { // Check if context is running
+                 // console.warn("AudioContext not running, cannot play click sound.");
+                return;
+            }
+
+            const oscillator = context.createOscillator();
+            const gainNode = context.createGain();
+
+            oscillator.type = 'triangle';
+            oscillator.frequency.setValueAtTime(1200, context.currentTime);
+            gainNode.gain.setValueAtTime(0.2, context.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.05);
+
+            oscillator.connect(gainNode);
+            gainNode.connect(context.destination);
+
+            oscillator.start(context.currentTime);
+            oscillator.stop(context.currentTime + 0.05);
+        }
+
+        function playLaserSound(volume = 0.15, startFreq = 1000, endFreq = 200, duration = 0.1) {
+            const context = getAudioContext();
+            if (!context || context.state !== 'running') { // Check if context is running
+                // console.warn("AudioContext not running, cannot play laser sound.");
+                return;
+            }
+
+            const oscillator = context.createOscillator();
+            const gainNode = context.createGain();
+
+            oscillator.type = 'sawtooth';
+            gainNode.gain.setValueAtTime(volume, context.currentTime);
+            oscillator.frequency.setValueAtTime(startFreq, context.currentTime);
+            oscillator.frequency.exponentialRampToValueAtTime(endFreq, context.currentTime + duration);
+            gainNode.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + duration + 0.02);
+
+            oscillator.connect(gainNode);
+            gainNode.connect(context.destination);
+
+            oscillator.start(context.currentTime);
+            oscillator.stop(context.currentTime + duration + 0.02);
+        }
+
 
         // --- Utility Functions ---
-        /**
-         * Checks for Axis-Aligned Bounding Box (AABB) collision between two rectangles.
-         */
         function AABBCollision(rect1, rect2) {
             return (
                 rect1.x < rect2.x + rect2.width &&
@@ -105,15 +163,11 @@
         }
 
         // --- Asset Manager ---
-        /**
-         * Handles loading and accessing game image assets.
-         */
         const assetManager = {
             images: {},
             totalAssetsToLoad: 0,
             loadedAssets: 0,
             _promises: [],
-
             loadImage(name, src) {
                 this.totalAssetsToLoad++;
                 const img = new Image();
@@ -125,7 +179,7 @@
                     };
                     img.onerror = (errEvent) => {
                         console.error(`AssetManager ERROR loading image ${name} from ${src}`, errEvent);
-                        this.loadedAssets++; // Count as "processed" for loading bar
+                        this.loadedAssets++;
                         reject(new Error(`Failed to load image: ${name}`));
                     };
                 });
@@ -133,23 +187,17 @@
                 this._promises.push(promise);
                 return promise;
             },
-
             async loadAll() {
                 const loadingMessageEl = document.getElementById('loadingMessage');
-                if (!loadingMessageEl) {
-                    console.error("AssetManager: Missing #loadingMessage element in HTML!");
-                }
+                if (!loadingMessageEl) { console.error("AssetManager: Missing #loadingMessage element!"); }
                 if (this.totalAssetsToLoad === 0) {
                     if (loadingMessageEl) loadingMessageEl.style.display = 'none';
                     return Promise.resolve();
                 }
-
                 if (loadingMessageEl) loadingMessageEl.textContent = `LOADING... (0/${this.totalAssetsToLoad})`;
-
                 const progressInterval = setInterval(() => {
                     if (loadingMessageEl) loadingMessageEl.textContent = `LOADING... (${this.loadedAssets}/${this.totalAssetsToLoad})`;
                 }, 100);
-
                 return Promise.all(this._promises.map(p => p.catch(e => e)))
                     .then((results) => {
                         const successfulLoads = results.filter(r => !(r instanceof Error));
@@ -168,7 +216,6 @@
                         this._promises = [];
                     });
             },
-
             getImage(name) {
                 const img = this.images[name];
                 if (img && img.complete && img.naturalHeight === 0) {
@@ -179,9 +226,6 @@
         };
 
         // --- Input Handler ---
-        /**
-         * Manages keyboard input state for the game.
-         */
         class InputHandler {
             constructor() {
                 this.keys = new Set();
@@ -189,6 +233,7 @@
                 window.addEventListener('keydown', (e) => {
                     if (relevantKeys.includes(e.key)) {
                         e.preventDefault();
+                        getAudioContext(); // Attempt to initialize/resume AudioContext on first keydown
                         this.keys.add(e.key === ' ' ? 'Space' : e.key);
                     }
                 });
@@ -207,12 +252,12 @@
         class Projectile {
             constructor(x, y, direction, gameWidth, color = '#FFEB3B', speed = 9, width = 10, height = 5, sprite = null) {
                 this.x = x; this.y = y; this.direction = direction; this.gameWidth = gameWidth;
-                this.width = width; this.height = height; this.speed = speed; // speed is units per NORMAL_FRAME
+                this.width = width; this.height = height; this.speed = speed;
                 this.color = color;
                 this.sprite = sprite;
                 this.active = true;
             }
-            update(effectiveDeltaTime, timeScaleFactor) { // ADDED timeScaleFactor
+            update(effectiveDeltaTime, timeScaleFactor) {
                 this.x += (this.direction === 'right' ? this.speed * timeScaleFactor : -this.speed * timeScaleFactor);
                 if (this.x < -this.width || this.x > this.gameWidth) {
                     this.active = false;
@@ -238,10 +283,9 @@
                 this.gameWidth = gameWidth; this.width = 50;  this.height = 75;
                 this.x = x; this.y = y;
                 this.fallbackColor = '#F44336';
-                this.speed = (Math.random() * 1.0 + 0.5); // speed is units per NORMAL_FRAME
+                this.speed = (Math.random() * 1.0 + 0.5);
                 this.active = true;
                 this.direction = (x < gameWidth / 2) ? 1 : -1;
-
                 this.walkFrames = []; this.explosionSprite = null;
                 if (this.direction === 1) {
                     this.walkFrames = [assetManager.getImage('leftEnemyWalk1'), assetManager.getImage('leftEnemyWalk2')];
@@ -253,20 +297,18 @@
                 this.currentWalkFrameIndex = 0;
                 this.pixelsMovedSinceFrameChange = 0;
                 this.animationPixelThreshold = 20;
-
-                this.isExploding = false; this.explosionDuration = 300; this.explosionTimer = 0; // ms
+                this.isExploding = false; this.explosionDuration = 300; this.explosionTimer = 0;
                 this._spriteMissingLogged = { walk: false, explosion: false };
             }
-            update(effectiveDeltaTime, timeScaleFactor) { // RENAMED deltaTime, ADDED timeScaleFactor
+            update(effectiveDeltaTime, timeScaleFactor) {
                 if (this.isExploding) {
                     this.explosionTimer -= effectiveDeltaTime;
                     if (this.explosionTimer <= 0) this.active = false;
                     return;
                 }
                 if (!this.active) return;
-
                 const oldX = this.x;
-                this.x += this.speed * this.direction * timeScaleFactor; // Apply timeScaleFactor
+                this.x += this.speed * this.direction * timeScaleFactor;
                 const movedDistance = Math.abs(this.x - oldX);
                 this.pixelsMovedSinceFrameChange += movedDistance;
                 if (this.pixelsMovedSinceFrameChange >= this.animationPixelThreshold) {
@@ -279,15 +321,12 @@
             }
             draw(ctx) {
                 if (!this.active && !this.isExploding) return;
-                let currentSpriteToDraw = null;
-                let spriteType = '';
-
+                let currentSpriteToDraw = null; let spriteType = '';
                 if (this.isExploding) {
                     currentSpriteToDraw = this.explosionSprite; spriteType = 'explosion';
                 } else if (this.active && this.walkFrames.length > 0 && this.walkFrames[this.currentWalkFrameIndex]) {
                     currentSpriteToDraw = this.walkFrames[this.currentWalkFrameIndex]; spriteType = 'walk';
                 }
-
                 if (currentSpriteToDraw && currentSpriteToDraw.complete && currentSpriteToDraw.naturalHeight !== 0) {
                     ctx.drawImage(currentSpriteToDraw, this.x, this.y, this.width, this.height);
                 } else {
@@ -314,38 +353,33 @@
                 this.width = 48; this.height = 48; this.x = x; this.y = y;
                 this.baseY = y;
                 this.fallbackColor = '#ADD8E6';
-                this.speed = (Math.random() * 1.5 + 1.0); // speed is units per NORMAL_FRAME
+                this.speed = (Math.random() * 1.5 + 1.0);
                 this.active = true;
                 this.direction = (x < gameWidth / 2) ? 1 : -1;
-
                 this.waveAmplitude = 25 + (Math.random() * 20);
                 this.waveFrequency = 0.025 + (Math.random() * 0.015);
-
                 this.animationFrames = []; this.currentFrameIndex = 0;
-                this.frameTimer = 0; this.frameDelay = 120; // ms
-
+                this.frameTimer = 0; this.frameDelay = 120;
                 if (this.direction === 1) {
                     this.animationFrames = [assetManager.getImage('Robo1'), assetManager.getImage('Robo2'), assetManager.getImage('Robo3'), assetManager.getImage('Robo4')];
                 } else {
                     this.animationFrames = [assetManager.getImage('Robo1 copy'), assetManager.getImage('Robo2 copy'), assetManager.getImage('Robo3 copy'), assetManager.getImage('Robo4 copy')];
                 }
                 this.explosionSprite = assetManager.getImage('RoboPOP');
-                this.isExploding = false; this.explosionDuration = 300; this.explosionTimer = 0; // ms
+                this.isExploding = false; this.explosionDuration = 300; this.explosionTimer = 0;
                 this.health = 1;
                 this._spriteMissingLogged = { fly: false, explosion: false };
             }
-            update(effectiveDeltaTime, timeScaleFactor) { // RENAMED deltaTime, ADDED timeScaleFactor
+            update(effectiveDeltaTime, timeScaleFactor) {
                 if (this.isExploding) {
                     this.explosionTimer -= effectiveDeltaTime;
                     if (this.explosionTimer <= 0) this.active = false;
                     return;
                 }
                 if (!this.active) return;
-
-                this.x += this.speed * this.direction * timeScaleFactor; // Apply timeScaleFactor
-                this.y = this.baseY + Math.sin(this.x * this.waveFrequency) * this.waveAmplitude; // Wave will appear faster due to faster x change
-
-                this.frameTimer += effectiveDeltaTime; // Animation timer scaled
+                this.x += this.speed * this.direction * timeScaleFactor;
+                this.y = this.baseY + Math.sin(this.x * this.waveFrequency) * this.waveAmplitude;
+                this.frameTimer += effectiveDeltaTime;
                 if (this.frameTimer >= this.frameDelay) {
                     this.currentFrameIndex = (this.currentFrameIndex + 1) % (this.animationFrames.length || 1);
                     this.frameTimer = 0;
@@ -355,7 +389,7 @@
                 }
             }
             draw(ctx) {
-                if (!this.active && !this.isExploding) return;
+                 if (!this.active && !this.isExploding) return;
                 let currentSpriteToDraw = null; let spriteType = '';
 
                 if (this.isExploding) {
@@ -392,21 +426,21 @@
                 this.gameWidth = gameWidth; this.gameHeight = gameHeight; this.player = player;
                 this.width = 180; this.height = 150;
                 this.x = gameWidth; this.y = gameHeight - 10 - this.height;
-                this.speed = 1; // speed is units per NORMAL_FRAME
+                this.speed = 1;
                 this.health = 9; this.maxHealth = 9;
                 this.active = true; this.isEntering = true; this.isDestroyed = false; this.isFiring = false;
                 this.fallbackColor = '#800080';
-                this.stateTimer = 0; this.idleDuration = 2500; this.firingDuration = 2000; // ms
-                this.fireCooldown = 700; this.lastShotTime = 0; // ms
+                this.stateTimer = 0; this.idleDuration = 2500; this.firingDuration = 2000;
+                this.fireCooldown = 700; this.lastShotTime = 0;
                 this.projectiles = [];
                 this.sprites = {
                     idle: assetManager.getImage('BOSS1R'), active: assetManager.getImage('BOSS2R'),
                     firing: assetManager.getImage('BOSS3R'), destroyed: assetManager.getImage('BOSS4R'),
                 };
                 this.currentSprite = this.sprites.idle; this.currentState = 'idle';
-                this._spriteMissingLogged = {}; this.explosionTimer = 0; this.explosionDuration = 1000; // ms
+                this._spriteMissingLogged = {}; this.explosionTimer = 0; this.explosionDuration = 1000;
             }
-            update(effectiveDeltaTime, timeScaleFactor) { // RENAMED deltaTime, ADDED timeScaleFactor
+            update(effectiveDeltaTime, timeScaleFactor) {
                 if (!this.active) return;
                 if (this.isDestroyed) {
                     this.explosionTimer -= effectiveDeltaTime;
@@ -415,7 +449,7 @@
                     return;
                 }
                 if (this.isEntering) {
-                    this.x -= this.speed * 0.8 * timeScaleFactor; // Apply timeScaleFactor
+                    this.x -= this.speed * 0.8 * timeScaleFactor;
                     this.y = this.gameHeight - 10 - this.height;
                     if (this.x <= this.gameWidth - this.width - 50) {
                         this.isEntering = false; this.x = this.gameWidth - this.width - 50;
@@ -424,7 +458,7 @@
                     } return;
                 }
                 this.y = this.gameHeight - 10 - this.height;
-                this.stateTimer -= effectiveDeltaTime; // Timers scaled
+                this.stateTimer -= effectiveDeltaTime;
                 if (this.currentState === 'idle') {
                     this.currentSprite = this.sprites.idle;
                     if (this.stateTimer <= 0) {
@@ -433,7 +467,7 @@
                     }
                 } else if (this.currentState === 'firing') {
                     this.currentSprite = this.sprites.firing;
-                    this.lastShotTime -= effectiveDeltaTime; // Timers scaled
+                    this.lastShotTime -= effectiveDeltaTime;
                     if (this.lastShotTime <= 0) { this.shoot(); this.lastShotTime = this.fireCooldown; }
                     if (this.stateTimer <= 0) {
                         this.currentState = 'idle'; this.isFiring = false;
@@ -443,9 +477,10 @@
                 this.projectiles.forEach(p => p.update(effectiveDeltaTime, timeScaleFactor));
                 this.projectiles = this.projectiles.filter(p => p.active);
             }
-            shoot() { // Projectile speed is per NORMAL_FRAME, will be scaled by Projectile.update
+            shoot() {
                 const projX = this.x + 30; const projY = this.y + this.height * 0.6;
                 this.projectiles.push(new Projectile(projX, projY, 'left', this.gameWidth, '#FF6347', 4, 20, 10));
+                playLaserSound(0.1, 600, 100, 0.15); // Boss laser sound
             }
             draw(ctx) {
                 if (!this.active) return;
@@ -493,12 +528,11 @@
                 this.active = true;
                 this.baseY = this.y;
                 this.bobAngle = Math.random() * Math.PI * 2;
-                this.bobSpeed = 0.05; // Rate of change for bobAngle
+                this.bobSpeed = 0.05;
                 this.bobAmplitude = 5;
             }
-            update(effectiveDeltaTime) { // Only needs effectiveDeltaTime
+            update(effectiveDeltaTime) {
                 if (!this.active) return;
-                // Bobbing speed scaled by effectiveDeltaTime relative to NORMAL_FRAME_DURATION_MS
                 this.bobAngle += this.bobSpeed * (effectiveDeltaTime / NORMAL_FRAME_DURATION_MS);
                 this.y = this.baseY + Math.sin(this.bobAngle) * this.bobAmplitude;
             }
@@ -517,18 +551,16 @@
                 this.x = 50; this.y = gameHeight - this.height - 10;
                 this.playerMovedX = 0;
                 this.fallbackColor = '#4CAF50';
-                this.speed = 5; // Speed is units per NORMAL_FRAME
+                this.speed = 5;
                 this.projectiles = [];
-                this.velocityY = 0; // Velocity in Y, units per NORMAL_FRAME
-                this.gravity = 0.75; // Acceleration per NORMAL_FRAME
-                this.jumpStrength = -17; // Initial Y velocity for jump, units per NORMAL_FRAME
-                this.onGround = true; this.facingDirection = 'right';
+                this.velocityY = 0; this.gravity = 0.75;
+                this.jumpStrength = -17; this.onGround = true; this.facingDirection = 'right';
                 this.isDucking = false; this.isMovingHorizontally = false;
-                this.currentWalkFrame = 0; this.walkAnimationTimer = 0; this.walkAnimationDelay = 150; // ms
-                this.shootCooldown = 0; // ms
-                this.shootCooldownTime = 180; this.plasmaShootCooldownTime = 250; // ms
+                this.currentWalkFrame = 0; this.walkAnimationTimer = 0; this.walkAnimationDelay = 150;
+                this.shootCooldown = 0;
+                this.shootCooldownTime = 180; this.plasmaShootCooldownTime = 250;
                 this.health = 3; this.isInvincible = false;
-                this.invincibilityDuration = 1500; this.invincibilityTimer = 0; // ms
+                this.invincibilityDuration = 1500; this.invincibilityTimer = 0;
                 this._spriteMissingLogged = {};
                 this.weaponType = 'default';
                 this.spritePlasBulLeft = null; this.spritePlasBulRight = null;
@@ -543,7 +575,7 @@
                 this.spriteDuckLeft = assetManager.getImage('DuckLeft');
             }
 
-            update(input, effectiveDeltaTime, timeScaleFactor) { // RENAMED deltaTime, ADDED timeScaleFactor
+            update(input, effectiveDeltaTime, timeScaleFactor) {
                 const oldPlayerX = this.x;
                 this.isMovingHorizontally = false;
                 this.isDucking = input.isKeyPressed('ArrowDown') && this.onGround;
@@ -555,13 +587,11 @@
                 }
                 this.playerMovedX = this.x - oldPlayerX;
 
-                // Animation timer (uses effectiveDeltaTime)
                 if (this.isMovingHorizontally && this.onGround && !this.isDucking) {
                     this.walkAnimationTimer += effectiveDeltaTime;
                     if (this.walkAnimationTimer >= this.walkAnimationDelay) { this.currentWalkFrame = 1 - this.currentWalkFrame; this.walkAnimationTimer = 0; }
                 } else { this.currentWalkFrame = 0; this.walkAnimationTimer = 0; }
 
-                // Physics (uses timeScaleFactor for per-frame values)
                 this.velocityY += this.gravity * timeScaleFactor;
                 this.y += this.velocityY * timeScaleFactor;
 
@@ -570,24 +600,23 @@
 
                 this.x = Math.max(0, Math.min(this.x, this.gameWidth - this.width));
 
-                // Timers (use effectiveDeltaTime)
                 if (this.shootCooldown > 0) this.shootCooldown -= effectiveDeltaTime;
                 if (input.consumeShoot() && this.shootCooldown <= 0) {
-                    this.shoot(); // Projectile speeds are per NORMAL_FRAME
+                    this.shoot();
                     this.shootCooldown = (this.weaponType === 'plasma') ? this.plasmaShootCooldownTime : this.shootCooldownTime;
                 }
-                this.projectiles.forEach(p => p.update(effectiveDeltaTime, timeScaleFactor)); // Pass factors
+                this.projectiles.forEach(p => p.update(effectiveDeltaTime, timeScaleFactor));
                 this.projectiles = this.projectiles.filter(p => p.active);
 
                 if (this.isInvincible) { this.invincibilityTimer -= effectiveDeltaTime; if (this.invincibilityTimer <= 0) this.isInvincible = false; }
             }
 
-            updateVisualsOnly(effectiveDeltaTime) { // Needs effectiveDeltaTime if any timers here
+            updateVisualsOnly(effectiveDeltaTime) {
                 this.currentWalkFrame = 0;
-                this.walkAnimationTimer = 0; // This timer would use effectiveDeltaTime if it were actively counting
+                this.walkAnimationTimer = 0;
             }
 
-            shoot() { // Projectile speeds are per NORMAL_FRAME, projectile.update will scale them
+            shoot() {
                 let projSpeed = 9;
                 let projWidth = 10; let projHeight = 5;
                 let projColor = '#FFEB3B'; let projSprite = null;
@@ -604,7 +633,11 @@
                         console.warn("Player.shoot: Plasma sprite not loaded, using fallback dimensions/color.");
                     }
                     projSpeed = 7;
+                    playLaserSound(0.12, 1200, 300, 0.08); // Player plasma sound
+                } else {
+                    playLaserSound(); // Default player laser sound
                 }
+
                 const projX = this.facingDirection === 'right' ? this.x + this.width : this.x - projWidth;
                 const projY = this.y + this.height / 2 - projHeight / 2;
                 this.projectiles.push(new Projectile(projX, projY, this.facingDirection, this.gameWidth, projColor, projSpeed, projWidth, projHeight, projSprite));
@@ -622,7 +655,8 @@
                     catch (e) { console.error("Player:draw Error drawing player sprite:", e, currentSprite); }
                 }
                 if (!drewSprite) {
-                    ctx.fillStyle = this.fallbackColor; ctx.fillRect(this.x, this.y, this.width, this.height);
+                    ctx.fillStyle = this.fallbackColor;
+                    ctx.fillRect(this.x, this.y, this.width, this.height);
                     if (spriteKey && !this._spriteMissingLogged[spriteKey]) {
                         console.warn(`Player:draw Fallback for player sprite key "${spriteKey}"`, currentSprite);
                         this._spriteMissingLogged[spriteKey] = true;
@@ -656,14 +690,14 @@
                 this.inputHandler = new InputHandler();
                 this.player = null; this.enemies = []; this.score = 0; this.lastTime = 0;
                 this.animationFrameId = null;
-                this.enemySpawnTimer = 0; this.enemySpawnInterval = 2500; // ms
+                this.enemySpawnTimer = 0; this.enemySpawnInterval = 2500;
                 this.gameLoop = this.gameLoop.bind(this);
                 this.backgroundSprite = null; this.foliageSprite1 = null; this.foliageSprite2 = null;
                 this.foliageX = 0; this.foliageScrollSpeedFactor = 0.3;
                 this.gameState = 'LOADING';
                 this.getReadySprite = null; this.goSprite = null;
                 this.gameOverSprite = null; this.playAgainButtonSprite = null;
-                this.preGameMessageTimer = 0; this.getReadyDuration = 2000; this.goDuration = 1000; // ms
+                this.preGameMessageTimer = 0; this.getReadyDuration = 2000; this.goDuration = 1000;
                 this.playAgainButtonRect = null;
                 this.canvas.addEventListener('click', this.handleCanvasClick.bind(this));
 
@@ -678,17 +712,21 @@
 
                 this.backgroundMusic = null;
 
-                // NEW: Game Speed Settings
-                this.gameSpeedMultiplier = 1.0; // 1.0 for normal
-                this.turboSpeedMultiplierValue = 1.75; // How much faster turbo is
-                this.setupSpeedControls(); // Initialize event listeners for speed controls
+                this.gameSpeedMultiplier = 1.0;
+                this.turboSpeedMultiplierValue = 1.75;
+                this.setupSpeedControls();
+
+                // Attempt to initialize AudioContext on first click anywhere if not already done by keydown
+                // Do this gently, so it doesn't block game start if user doesn't click.
+                // Sounds will attempt to initialize/resume context when first played.
+                document.body.addEventListener('click', () => getAudioContext(), { once: true });
             }
 
-            // NEW: Setup speed control UI listeners
             setupSpeedControls() {
                 const speedRadios = document.querySelectorAll('input[name="speedSetting"]');
                 speedRadios.forEach(radio => {
                     radio.addEventListener('change', (event) => {
+                        getAudioContext(); // Ensure AudioContext is active
                         if (event.target.value === 'turbo') {
                             this.gameSpeedMultiplier = this.turboSpeedMultiplierValue;
                             console.log("Game speed: TURBO (x" + this.gameSpeedMultiplier + ")");
@@ -701,11 +739,14 @@
             }
 
             handleCanvasClick(event) {
+                getAudioContext(); // Ensure AudioContext is active for sound
+
                 if (this.gameState !== 'GAME_OVER' || !this.playAgainButtonRect) return;
                 const rect = this.canvas.getBoundingClientRect();
                 const clickX = event.clientX - rect.left; const clickY = event.clientY - rect.top;
                 if (clickX >= this.playAgainButtonRect.x && clickX <= this.playAgainButtonRect.x + this.playAgainButtonRect.width &&
                     clickY >= this.playAgainButtonRect.y && clickY <= this.playAgainButtonRect.y + this.playAgainButtonRect.height) {
+                    playClickSound(); // Play click sound for button
                     this.resetGame();
                 }
             }
@@ -760,7 +801,7 @@
                 }
             }
 
-            update(effectiveDeltaTime, timeScaleFactor) { // RENAMED deltaTime, ADDED timeScaleFactor
+            update(effectiveDeltaTime, timeScaleFactor) {
                 if (!this.player && this.gameState !== 'LOADING' && this.gameState !== 'GAME_OVER') {
                     console.warn("Game: Player not initialized during an active game state:", this.gameState); return;
                 }
@@ -774,12 +815,12 @@
                     case 'PRE_GAME_GET_READY':
                         this.preGameMessageTimer -= effectiveDeltaTime;
                         if (this.preGameMessageTimer <= 0) { this.gameState = 'PRE_GAME_GO'; this.preGameMessageTimer = this.goDuration; }
-                        if (this.player) this.player.updateVisualsOnly(effectiveDeltaTime); // Pass effectiveDeltaTime
+                        if (this.player) this.player.updateVisualsOnly(effectiveDeltaTime);
                         return;
                     case 'PRE_GAME_GO':
                         this.preGameMessageTimer -= effectiveDeltaTime;
                         if (this.preGameMessageTimer <= 0) { this.gameState = 'RUNNING'; }
-                        if (this.player) this.player.updateVisualsOnly(effectiveDeltaTime); // Pass effectiveDeltaTime
+                        if (this.player) this.player.updateVisualsOnly(effectiveDeltaTime);
                         return;
                     case 'GAME_OVER': return;
                     case 'RUNNING': break;
@@ -790,11 +831,11 @@
                     this.spawnBoss();
                 }
 
-                this.player.update(this.inputHandler, effectiveDeltaTime, timeScaleFactor); // Pass factors
+                this.player.update(this.inputHandler, effectiveDeltaTime, timeScaleFactor);
                 let bossDefeatedThisFrame = false;
 
                 if (this.boss && this.boss.active) {
-                    this.boss.update(effectiveDeltaTime, timeScaleFactor); // Pass factors
+                    this.boss.update(effectiveDeltaTime, timeScaleFactor);
                     this.player.projectiles.forEach(proj => {
                         if (proj.active && AABBCollision(proj.getRect(), this.boss.getRect()) && !this.boss.isDestroyed && !this.boss.isEntering) {
                             proj.active = false; let regularScoreForHit = 25; this.score += regularScoreForHit;
@@ -828,7 +869,7 @@
                         }
                     }
                 } else {
-                    this.enemies.forEach(enemy => enemy.update(effectiveDeltaTime, timeScaleFactor)); // Pass factors
+                    this.enemies.forEach(enemy => enemy.update(effectiveDeltaTime, timeScaleFactor));
                     this.player.projectiles.forEach(proj => {
                         this.enemies.forEach(enemy => {
                             if (proj.active && enemy.active && !enemy.isExploding && AABBCollision(proj.getRect(), enemy.getRect())) {
@@ -842,8 +883,8 @@
                         }
                     });
 
-                    if (!this.boss) { // Regular enemy spawning
-                        this.enemySpawnTimer += effectiveDeltaTime; // Use effectiveDeltaTime
+                    if (!this.boss) {
+                        this.enemySpawnTimer += effectiveDeltaTime;
                         if (this.enemySpawnTimer >= this.enemySpawnInterval) {
                             if (this.enemies.length < 8) this.spawnEnemy();
                             this.enemySpawnTimer = 0;
@@ -854,7 +895,7 @@
 
                 for (let i = this.pickupItems.length - 1; i >= 0; i--) {
                     const pickup = this.pickupItems[i];
-                    pickup.update(effectiveDeltaTime); // Only needs effectiveDeltaTime
+                    pickup.update(effectiveDeltaTime);
                     if (!pickup.active) {
                         this.pickupItems.splice(i, 1); continue;
                     }
@@ -876,7 +917,7 @@
                 }
 
                 if (this.player.playerMovedX !== 0 && this.foliageSprite1 && this.foliageSprite2) {
-                    this.foliageX -= this.player.playerMovedX * this.foliageScrollSpeedFactor; // playerMovedX is already scaled by timeScaleFactor inside Player.update
+                    this.foliageX -= this.player.playerMovedX * this.foliageScrollSpeedFactor;
                     const combinedFoliageWidth = (this.foliageSprite1.width || 0) + (this.foliageSprite2.width || 0);
                     if (combinedFoliageWidth > 0) {
                         this.foliageX %= combinedFoliageWidth;
@@ -998,10 +1039,9 @@
                 this.lastTime = timestamp;
 
                 const effectiveDeltaTime = actualDeltaTime * this.gameSpeedMultiplier;
-                // timeScaleFactor is how many "normal frames" have passed in this effectiveDeltaTime
                 const timeScaleFactor = effectiveDeltaTime / NORMAL_FRAME_DURATION_MS;
 
-                this.update(effectiveDeltaTime, timeScaleFactor); // Pass both factors
+                this.update(effectiveDeltaTime, timeScaleFactor);
                 this.draw();
                 this.animationFrameId = requestAnimationFrame(this.gameLoop);
             }
