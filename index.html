@@ -683,6 +683,9 @@
                 this.plasBoxSprite = null;
                 this.plasBoxDisplayWidth = 70;  // Desired width for the PlasBox pickup on screen
                 this.plasBoxDisplayHeight = 70; // Desired height for the PlasBox pickup on screen
+
+                // Background Music
+                this.backgroundMusic = null;
             }
 
             handleCanvasClick(event) {
@@ -711,6 +714,20 @@
                 this.nextBossSpawnScore = 500; // Reset for the first boss
                 this.pickupItems = []; // Clear any active pickups
                 console.log("Game: Game reset. Next boss at score:", this.nextBossSpawnScore);
+
+                // Attempt to play background music
+                if (this.backgroundMusic) {
+                    // Ensure music is reset to the beginning if it was already playing
+                    this.backgroundMusic.currentTime = 0;
+                    const playPromise = this.backgroundMusic.play();
+                    if (playPromise !== undefined) {
+                        playPromise.catch(error => {
+                            console.warn("Background music autoplay was prevented. It should start after user interaction (e.g., clicking 'Play Again').", error);
+                            // A common practice is to enable music after the first explicit user gesture if autoplay fails.
+                            // For this game, clicking "Play Again" or starting a new game serves this purpose.
+                        });
+                    }
+                }
             }
 
             spawnEnemy() {
@@ -996,7 +1013,14 @@
                 }
             }
 
-            gameOver() { this.gameState = 'GAME_OVER'; console.log("Game: Game Over."); }
+            gameOver() {
+                this.gameState = 'GAME_OVER';
+                console.log("Game: Game Over.");
+                // Optionally pause music on game over, or let it continue
+                // if (this.backgroundMusic) {
+                //     this.backgroundMusic.pause();
+                // }
+            }
 
             gameLoop(timestamp) {
                 const deltaTime = (timestamp - (this.lastTime || timestamp)) || (1000/60); // Calculate delta time, fallback to ~60fps if first frame
@@ -1058,6 +1082,19 @@
                     this.plasBoxSprite = assetManager.getImage('plasBox');
 
                     if (!this.backgroundSprite) console.warn("Game: Background sprite 'SettingSun.png' not loaded!");
+
+                    // Initialize Background Music
+                    try {
+                        this.backgroundMusic = new Audio('melancholic-classical-music-longing-heart-326205.mp3');
+                        this.backgroundMusic.loop = true;
+                        this.backgroundMusic.volume = 0.3; // Adjust volume as needed (0.0 to 1.0)
+                        console.log("Game: Background music object created and configured.");
+                        // Note: Music play is attempted in resetGame() which is called after init
+                    } catch (e) {
+                        console.error("Game: Error creating Audio object for background music.", e);
+                        this.backgroundMusic = null; // Ensure it's null if creation failed
+                    }
+
                 } catch (err) {
                     console.error("Game: Critical error loading assets:", err);
                     this.gameState = 'ERROR_LOADING'; // Display error state if assets fail
@@ -1065,7 +1102,7 @@
                 }
 
                 this.player = new Player(this.canvas.width, this.canvas.height); console.log("Game: Player initialized.");
-                this.resetGame(); // Set initial game state and reset values
+                this.resetGame(); // Set initial game state, reset values, and attempt to play music
                 if (this.animationFrameId) cancelAnimationFrame(this.animationFrameId); // Clear previous loop if any
                 this.lastTime = 0; // Reset lastTime for deltaTime calculation
                 console.log("Game: Starting game loop.");
