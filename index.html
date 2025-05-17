@@ -25,6 +25,25 @@
             width: 350px;
             height: auto;
         }
+        /* NEW: Game Settings Styles */
+        .game-settings {
+            margin-bottom: 10px; /* Space before canvas */
+            font-size: 0.8em;
+            color: #ccc;
+            background-color: rgba(0,0,0,0.5);
+            padding: 6px 10px;
+            border-radius: 5px;
+            text-align: center;
+        }
+        .game-settings label {
+            margin-left: 10px;
+            cursor: pointer;
+        }
+        .game-settings input[type="radio"] {
+            vertical-align: middle;
+            margin-right: 3px;
+        }
+
         canvas {
             border: 4px solid #fff;
             background-color: #000;
@@ -53,6 +72,13 @@
 <body>
     <img id="gameTitleImage" src="METALLUGS.png" alt="Metal Lugs Title">
 
+    <!-- NEW: Game Settings UI -->
+    <div class="game-settings">
+        <span>Speed:</span>
+        <label><input type="radio" name="speedSetting" value="normal" checked> Normal</label>
+        <label><input type="radio" name="speedSetting" value="turbo"> Turbo</label>
+    </div>
+
     <canvas id="gameCanvas"></canvas>
     <div class="controls-info">
         <p>Controls: Arrow Keys (Move/Jump/Duck), Spacebar (Shoot)</p>
@@ -61,6 +87,9 @@
 
     <script>
         console.log("Script execution started.");
+
+        // --- Global Constants ---
+        const NORMAL_FRAME_DURATION_MS = 1000 / 60; // Approx 16.667ms
 
         // --- Utility Functions ---
         /**
@@ -171,24 +200,20 @@
                 });
             }
             isKeyPressed(key) { return this.keys.has(key); }
-            consumeShoot() { return this.keys.has('Space'); } // Specifically for shooting action
+            consumeShoot() { return this.keys.has('Space'); }
         }
 
         // --- Projectile Class ---
-        /**
-         * Represents a projectile fired by the player or enemies.
-         * Can be a colored rectangle or use a sprite.
-         */
         class Projectile {
             constructor(x, y, direction, gameWidth, color = '#FFEB3B', speed = 9, width = 10, height = 5, sprite = null) {
                 this.x = x; this.y = y; this.direction = direction; this.gameWidth = gameWidth;
-                this.width = width; this.height = height; this.speed = speed;
+                this.width = width; this.height = height; this.speed = speed; // speed is units per NORMAL_FRAME
                 this.color = color;
                 this.sprite = sprite;
                 this.active = true;
             }
-            update(deltaTime) {
-                this.x += (this.direction === 'right' ? this.speed : -this.speed);
+            update(effectiveDeltaTime, timeScaleFactor) { // ADDED timeScaleFactor
+                this.x += (this.direction === 'right' ? this.speed * timeScaleFactor : -this.speed * timeScaleFactor);
                 if (this.x < -this.width || this.x > this.gameWidth) {
                     this.active = false;
                 }
@@ -199,7 +224,7 @@
                 } else if (this.color) {
                     ctx.fillStyle = this.color;
                     ctx.fillRect(this.x, this.y, this.width, this.height);
-                } else { // Fallback if no sprite and no color (e.g., plasma sprite failed to load)
+                } else {
                     ctx.fillStyle = 'magenta';
                     ctx.fillRect(this.x, this.y, this.width, this.height);
                 }
@@ -208,23 +233,20 @@
         }
 
         // --- Enemy Class ---
-        /**
-         * Represents a basic ground-based enemy character.
-         */
         class Enemy {
              constructor(x, y, gameWidth) {
                 this.gameWidth = gameWidth; this.width = 50;  this.height = 75;
                 this.x = x; this.y = y;
                 this.fallbackColor = '#F44336';
-                this.speed = (Math.random() * 1.0 + 0.5);
+                this.speed = (Math.random() * 1.0 + 0.5); // speed is units per NORMAL_FRAME
                 this.active = true;
                 this.direction = (x < gameWidth / 2) ? 1 : -1;
 
                 this.walkFrames = []; this.explosionSprite = null;
-                if (this.direction === 1) { // Moving Right (uses left-facing sprites as they move towards player from right)
+                if (this.direction === 1) {
                     this.walkFrames = [assetManager.getImage('leftEnemyWalk1'), assetManager.getImage('leftEnemyWalk2')];
                     this.explosionSprite = assetManager.getImage('leftEnemyExplosion');
-                } else { // Moving Left
+                } else {
                     this.walkFrames = [assetManager.getImage('rightEnemyWalk1'), assetManager.getImage('rightEnemyWalk2')];
                     this.explosionSprite = assetManager.getImage('rightEnemyExplosion');
                 }
@@ -232,19 +254,19 @@
                 this.pixelsMovedSinceFrameChange = 0;
                 this.animationPixelThreshold = 20;
 
-                this.isExploding = false; this.explosionDuration = 300; this.explosionTimer = 0;
+                this.isExploding = false; this.explosionDuration = 300; this.explosionTimer = 0; // ms
                 this._spriteMissingLogged = { walk: false, explosion: false };
             }
-            update(deltaTime) {
+            update(effectiveDeltaTime, timeScaleFactor) { // RENAMED deltaTime, ADDED timeScaleFactor
                 if (this.isExploding) {
-                    this.explosionTimer -= deltaTime;
+                    this.explosionTimer -= effectiveDeltaTime;
                     if (this.explosionTimer <= 0) this.active = false;
                     return;
                 }
                 if (!this.active) return;
 
                 const oldX = this.x;
-                this.x += this.speed * this.direction;
+                this.x += this.speed * this.direction * timeScaleFactor; // Apply timeScaleFactor
                 const movedDistance = Math.abs(this.x - oldX);
                 this.pixelsMovedSinceFrameChange += movedDistance;
                 if (this.pixelsMovedSinceFrameChange >= this.animationPixelThreshold) {
@@ -286,23 +308,21 @@
         }
 
         // --- FlyingEnemy Class ---
-        /**
-         * Represents a flying robot enemy with wave motion and animation.
-         */
         class FlyingEnemy {
             constructor(x, y, gameWidth) {
                 this.gameWidth = gameWidth;
                 this.width = 48; this.height = 48; this.x = x; this.y = y;
                 this.baseY = y;
                 this.fallbackColor = '#ADD8E6';
-                this.speed = (Math.random() * 1.5 + 1.0); this.active = true;
+                this.speed = (Math.random() * 1.5 + 1.0); // speed is units per NORMAL_FRAME
+                this.active = true;
                 this.direction = (x < gameWidth / 2) ? 1 : -1;
 
                 this.waveAmplitude = 25 + (Math.random() * 20);
                 this.waveFrequency = 0.025 + (Math.random() * 0.015);
 
                 this.animationFrames = []; this.currentFrameIndex = 0;
-                this.frameTimer = 0; this.frameDelay = 120;
+                this.frameTimer = 0; this.frameDelay = 120; // ms
 
                 if (this.direction === 1) {
                     this.animationFrames = [assetManager.getImage('Robo1'), assetManager.getImage('Robo2'), assetManager.getImage('Robo3'), assetManager.getImage('Robo4')];
@@ -310,22 +330,22 @@
                     this.animationFrames = [assetManager.getImage('Robo1 copy'), assetManager.getImage('Robo2 copy'), assetManager.getImage('Robo3 copy'), assetManager.getImage('Robo4 copy')];
                 }
                 this.explosionSprite = assetManager.getImage('RoboPOP');
-                this.isExploding = false; this.explosionDuration = 300; this.explosionTimer = 0;
+                this.isExploding = false; this.explosionDuration = 300; this.explosionTimer = 0; // ms
                 this.health = 1;
                 this._spriteMissingLogged = { fly: false, explosion: false };
             }
-            update(deltaTime) {
+            update(effectiveDeltaTime, timeScaleFactor) { // RENAMED deltaTime, ADDED timeScaleFactor
                 if (this.isExploding) {
-                    this.explosionTimer -= deltaTime;
+                    this.explosionTimer -= effectiveDeltaTime;
                     if (this.explosionTimer <= 0) this.active = false;
                     return;
                 }
                 if (!this.active) return;
 
-                this.x += this.speed * this.direction;
-                this.y = this.baseY + Math.sin(this.x * this.waveFrequency) * this.waveAmplitude;
+                this.x += this.speed * this.direction * timeScaleFactor; // Apply timeScaleFactor
+                this.y = this.baseY + Math.sin(this.x * this.waveFrequency) * this.waveAmplitude; // Wave will appear faster due to faster x change
 
-                this.frameTimer += deltaTime;
+                this.frameTimer += effectiveDeltaTime; // Animation timer scaled
                 if (this.frameTimer >= this.frameDelay) {
                     this.currentFrameIndex = (this.currentFrameIndex + 1) % (this.animationFrames.length || 1);
                     this.frameTimer = 0;
@@ -367,45 +387,44 @@
         }
 
         // --- Boss Class ---
-        /**
-         * Represents the boss enemy with multiple states and attack patterns.
-         */
         class Boss {
             constructor(gameWidth, gameHeight, player) {
                 this.gameWidth = gameWidth; this.gameHeight = gameHeight; this.player = player;
                 this.width = 180; this.height = 150;
                 this.x = gameWidth; this.y = gameHeight - 10 - this.height;
-                this.speed = 1; this.health = 9; this.maxHealth = 9;
+                this.speed = 1; // speed is units per NORMAL_FRAME
+                this.health = 9; this.maxHealth = 9;
                 this.active = true; this.isEntering = true; this.isDestroyed = false; this.isFiring = false;
                 this.fallbackColor = '#800080';
-                this.stateTimer = 0; this.idleDuration = 2500; this.firingDuration = 2000;
-                this.fireCooldown = 700; this.lastShotTime = 0;
+                this.stateTimer = 0; this.idleDuration = 2500; this.firingDuration = 2000; // ms
+                this.fireCooldown = 700; this.lastShotTime = 0; // ms
                 this.projectiles = [];
                 this.sprites = {
                     idle: assetManager.getImage('BOSS1R'), active: assetManager.getImage('BOSS2R'),
                     firing: assetManager.getImage('BOSS3R'), destroyed: assetManager.getImage('BOSS4R'),
                 };
                 this.currentSprite = this.sprites.idle; this.currentState = 'idle';
-                this._spriteMissingLogged = {}; this.explosionTimer = 0; this.explosionDuration = 1000;
+                this._spriteMissingLogged = {}; this.explosionTimer = 0; this.explosionDuration = 1000; // ms
             }
-            update(deltaTime) {
+            update(effectiveDeltaTime, timeScaleFactor) { // RENAMED deltaTime, ADDED timeScaleFactor
                 if (!this.active) return;
                 if (this.isDestroyed) {
-                    this.explosionTimer -= deltaTime;
+                    this.explosionTimer -= effectiveDeltaTime;
+                    this.projectiles.forEach(p => p.update(effectiveDeltaTime, timeScaleFactor));
                     if (this.explosionTimer <= 0) this.active = false;
-                    this.projectiles.forEach(p => p.update(deltaTime));
-                    this.projectiles = this.projectiles.filter(p => p.active);
                     return;
                 }
                 if (this.isEntering) {
-                    this.x -= this.speed * 0.8; this.y = this.gameHeight - 10 - this.height;
+                    this.x -= this.speed * 0.8 * timeScaleFactor; // Apply timeScaleFactor
+                    this.y = this.gameHeight - 10 - this.height;
                     if (this.x <= this.gameWidth - this.width - 50) {
                         this.isEntering = false; this.x = this.gameWidth - this.width - 50;
                         this.stateTimer = this.idleDuration; this.currentState = 'idle';
                         this.currentSprite = this.sprites.idle;
                     } return;
                 }
-                this.y = this.gameHeight - 10 - this.height; this.stateTimer -= deltaTime;
+                this.y = this.gameHeight - 10 - this.height;
+                this.stateTimer -= effectiveDeltaTime; // Timers scaled
                 if (this.currentState === 'idle') {
                     this.currentSprite = this.sprites.idle;
                     if (this.stateTimer <= 0) {
@@ -413,17 +432,18 @@
                         this.stateTimer = this.firingDuration; this.lastShotTime = 0;
                     }
                 } else if (this.currentState === 'firing') {
-                    this.currentSprite = this.sprites.firing; this.lastShotTime -= deltaTime;
-                    if (this.lastShotTime <= 0) { this.shoot(); this.lastShotTime = this.fireCooldown; } // Corrected shoot call
+                    this.currentSprite = this.sprites.firing;
+                    this.lastShotTime -= effectiveDeltaTime; // Timers scaled
+                    if (this.lastShotTime <= 0) { this.shoot(); this.lastShotTime = this.fireCooldown; }
                     if (this.stateTimer <= 0) {
                         this.currentState = 'idle'; this.isFiring = false;
                         this.stateTimer = this.idleDuration; this.currentSprite = this.sprites.idle;
                     }
                 }
-                this.projectiles.forEach(p => p.update(deltaTime));
+                this.projectiles.forEach(p => p.update(effectiveDeltaTime, timeScaleFactor));
                 this.projectiles = this.projectiles.filter(p => p.active);
             }
-            shoot() {
+            shoot() { // Projectile speed is per NORMAL_FRAME, will be scaled by Projectile.update
                 const projX = this.x + 30; const projY = this.y + this.height * 0.6;
                 this.projectiles.push(new Projectile(projX, projY, 'left', this.gameWidth, '#FF6347', 4, 20, 10));
             }
@@ -462,68 +482,56 @@
         }
 
         // --- PickupItem Class ---
-        /**
-         * Represents a collectible item in the game, like a weapon upgrade.
-         */
         class PickupItem {
             constructor(x, y, sprite, type, width = 48, height = 48) {
-                this.x = x - width / 2; // Center the pickup
+                this.x = x - width / 2;
                 this.y = y - height / 2;
                 this.width = width;
                 this.height = height;
                 this.sprite = sprite;
-                this.type = type; // e.g., 'plasma_weapon'
+                this.type = type;
                 this.active = true;
-
-                // Simple bobbing animation parameters
                 this.baseY = this.y;
                 this.bobAngle = Math.random() * Math.PI * 2;
-                this.bobSpeed = 0.05;
+                this.bobSpeed = 0.05; // Rate of change for bobAngle
                 this.bobAmplitude = 5;
             }
-
-            update(deltaTime) {
+            update(effectiveDeltaTime) { // Only needs effectiveDeltaTime
                 if (!this.active) return;
-                // Update bobbing animation
-                this.bobAngle += this.bobSpeed * (deltaTime / 16.67); // Normalize bob speed (assuming ~60fps target for deltaTime)
+                // Bobbing speed scaled by effectiveDeltaTime relative to NORMAL_FRAME_DURATION_MS
+                this.bobAngle += this.bobSpeed * (effectiveDeltaTime / NORMAL_FRAME_DURATION_MS);
                 this.y = this.baseY + Math.sin(this.bobAngle) * this.bobAmplitude;
             }
-
             draw(ctx) {
                 if (!this.active || !this.sprite || !this.sprite.complete || this.sprite.naturalHeight === 0) return;
                 ctx.drawImage(this.sprite, this.x, this.y, this.width, this.height);
             }
-
-            getRect() {
-                return { x: this.x, y: this.y, width: this.width, height: this.height };
-            }
+            getRect() { return { x: this.x, y: this.y, width: this.width, height: this.height }; }
         }
 
         // --- Player Class ---
-        /**
-         * Represents the player character. Handles movement, shooting, and health.
-         */
         class Player {
             constructor(gameWidth, gameHeight) {
                 this.gameWidth = gameWidth; this.gameHeight = gameHeight;
                 this.width = 60; this.height = 98;
                 this.x = 50; this.y = gameHeight - this.height - 10;
                 this.playerMovedX = 0;
-                this.fallbackColor = '#4CAF50'; this.speed = 5;
-                this.projectiles = []; this.velocityY = 0; this.gravity = 0.75;
-                this.jumpStrength = -17; this.onGround = true; this.facingDirection = 'right';
+                this.fallbackColor = '#4CAF50';
+                this.speed = 5; // Speed is units per NORMAL_FRAME
+                this.projectiles = [];
+                this.velocityY = 0; // Velocity in Y, units per NORMAL_FRAME
+                this.gravity = 0.75; // Acceleration per NORMAL_FRAME
+                this.jumpStrength = -17; // Initial Y velocity for jump, units per NORMAL_FRAME
+                this.onGround = true; this.facingDirection = 'right';
                 this.isDucking = false; this.isMovingHorizontally = false;
-                this.currentWalkFrame = 0; this.walkAnimationTimer = 0; this.walkAnimationDelay = 150;
-                this.shootCooldown = 0;
-                this.shootCooldownTime = 180; // Cooldown for default weapon
-                this.plasmaShootCooldownTime = 250; // Cooldown for plasma weapon
+                this.currentWalkFrame = 0; this.walkAnimationTimer = 0; this.walkAnimationDelay = 150; // ms
+                this.shootCooldown = 0; // ms
+                this.shootCooldownTime = 180; this.plasmaShootCooldownTime = 250; // ms
                 this.health = 3; this.isInvincible = false;
-                this.invincibilityDuration = 1500; this.invincibilityTimer = 0;
+                this.invincibilityDuration = 1500; this.invincibilityTimer = 0; // ms
                 this._spriteMissingLogged = {};
-
-                this.weaponType = 'default'; // Can be 'default' or 'plasma'
-                this.spritePlasBulLeft = null;
-                this.spritePlasBulRight = null;
+                this.weaponType = 'default';
+                this.spritePlasBulLeft = null; this.spritePlasBulRight = null;
 
                 this.spriteIdleRight = assetManager.getImage('MGSpriteright');
                 this.spriteIdleLeft = assetManager.getImage('MGSpriteleft');
@@ -535,73 +543,70 @@
                 this.spriteDuckLeft = assetManager.getImage('DuckLeft');
             }
 
-            update(input, deltaTime) {
+            update(input, effectiveDeltaTime, timeScaleFactor) { // RENAMED deltaTime, ADDED timeScaleFactor
                 const oldPlayerX = this.x;
                 this.isMovingHorizontally = false;
                 this.isDucking = input.isKeyPressed('ArrowDown') && this.onGround;
 
                 if (!this.isDucking) {
-                    if (input.isKeyPressed('ArrowLeft')) { this.x -= this.speed; this.facingDirection = 'left'; this.isMovingHorizontally = true; }
-                    if (input.isKeyPressed('ArrowRight')) { this.x += this.speed; this.facingDirection = 'right'; this.isMovingHorizontally = true; }
+                    if (input.isKeyPressed('ArrowLeft')) { this.x -= this.speed * timeScaleFactor; this.facingDirection = 'left'; this.isMovingHorizontally = true; }
+                    if (input.isKeyPressed('ArrowRight')) { this.x += this.speed * timeScaleFactor; this.facingDirection = 'right'; this.isMovingHorizontally = true; }
                     if (input.isKeyPressed('ArrowUp') && this.onGround) { this.velocityY = this.jumpStrength; this.onGround = false; }
                 }
                 this.playerMovedX = this.x - oldPlayerX;
 
+                // Animation timer (uses effectiveDeltaTime)
                 if (this.isMovingHorizontally && this.onGround && !this.isDucking) {
-                    this.walkAnimationTimer += deltaTime;
+                    this.walkAnimationTimer += effectiveDeltaTime;
                     if (this.walkAnimationTimer >= this.walkAnimationDelay) { this.currentWalkFrame = 1 - this.currentWalkFrame; this.walkAnimationTimer = 0; }
                 } else { this.currentWalkFrame = 0; this.walkAnimationTimer = 0; }
 
-                this.y += this.velocityY; this.velocityY += this.gravity;
+                // Physics (uses timeScaleFactor for per-frame values)
+                this.velocityY += this.gravity * timeScaleFactor;
+                this.y += this.velocityY * timeScaleFactor;
+
                 const groundLevel = this.gameHeight - this.height - 10;
                 if (this.y >= groundLevel) { this.y = groundLevel; this.velocityY = 0; this.onGround = true; }
 
-                this.x = Math.max(0, Math.min(this.x, this.gameWidth - this.width)); // Clamp player to screen bounds
+                this.x = Math.max(0, Math.min(this.x, this.gameWidth - this.width));
 
-                if (this.shootCooldown > 0) this.shootCooldown -= deltaTime;
-                if (input.consumeShoot() && this.shootCooldown <= 0) { // Changed from input.consume() back to input.consumeShoot()
-                    this.shoot();
+                // Timers (use effectiveDeltaTime)
+                if (this.shootCooldown > 0) this.shootCooldown -= effectiveDeltaTime;
+                if (input.consumeShoot() && this.shootCooldown <= 0) {
+                    this.shoot(); // Projectile speeds are per NORMAL_FRAME
                     this.shootCooldown = (this.weaponType === 'plasma') ? this.plasmaShootCooldownTime : this.shootCooldownTime;
                 }
-                this.projectiles.forEach(p => p.update(deltaTime));
+                this.projectiles.forEach(p => p.update(effectiveDeltaTime, timeScaleFactor)); // Pass factors
                 this.projectiles = this.projectiles.filter(p => p.active);
 
-                if (this.isInvincible) { this.invincibilityTimer -= deltaTime; if (this.invincibilityTimer <= 0) this.isInvincible = false; }
+                if (this.isInvincible) { this.invincibilityTimer -= effectiveDeltaTime; if (this.invincibilityTimer <= 0) this.isInvincible = false; }
             }
 
-            updateVisualsOnly(deltaTime) { // Called during pre-game states
+            updateVisualsOnly(effectiveDeltaTime) { // Needs effectiveDeltaTime if any timers here
                 this.currentWalkFrame = 0;
-                this.walkAnimationTimer = 0;
+                this.walkAnimationTimer = 0; // This timer would use effectiveDeltaTime if it were actively counting
             }
 
-            shoot() {
+            shoot() { // Projectile speeds are per NORMAL_FRAME, projectile.update will scale them
                 let projSpeed = 9;
-                let projWidth = 10;
-                let projHeight = 5;
-                let projColor = '#FFEB3B'; // Default bullet color
-                let projSprite = null;
+                let projWidth = 10; let projHeight = 5;
+                let projColor = '#FFEB3B'; let projSprite = null;
 
                 if (this.weaponType === 'plasma') {
                     if (!this.spritePlasBulLeft) this.spritePlasBulLeft = assetManager.getImage('plasBulLeft');
                     if (!this.spritePlasBulRight) this.spritePlasBulRight = assetManager.getImage('plasBulRight');
-
                     projSprite = (this.facingDirection === 'right') ? this.spritePlasBulRight : this.spritePlasBulLeft;
-                    projColor = null; // Don't use color fill when using a sprite
-
+                    projColor = null;
                     if (projSprite && projSprite.complete && projSprite.naturalHeight !== 0) {
-                        // Scale plasma bullet sprite to 1/4 of its original dimensions
-                        projWidth = projSprite.width / 4;
-                        projHeight = projSprite.height / 4;
-                    } else { // Fallback if plasma sprite isn't loaded
-                        projWidth = 20; projHeight = 10; projColor = '#00FFFF'; // Default plasma-like color
+                        projWidth = projSprite.width / 4; projHeight = projSprite.height / 4;
+                    } else {
+                        projWidth = 20; projHeight = 10; projColor = '#00FFFF';
                         console.warn("Player.shoot: Plasma sprite not loaded, using fallback dimensions/color.");
                     }
-                    projSpeed = 7; // Plasma might be slightly slower
+                    projSpeed = 7;
                 }
-
                 const projX = this.facingDirection === 'right' ? this.x + this.width : this.x - projWidth;
-                const projY = this.y + this.height / 2 - projHeight / 2; // Center projectile vertically
-
+                const projY = this.y + this.height / 2 - projHeight / 2;
                 this.projectiles.push(new Projectile(projX, projY, this.facingDirection, this.gameWidth, projColor, projSpeed, projWidth, projHeight, projSprite));
             }
             draw(ctx) {
@@ -611,21 +616,19 @@
                 } else { if (this.isMovingHorizontally) { if (this.facingDirection === 'right') { spriteKey = this.currentWalkFrame===0?'MGSpriteright':'MGSpriteright2'; currentSprite = this.currentWalkFrame===0?this.spriteIdleRight:this.spriteWalkRight2; } else { spriteKey = this.currentWalkFrame===0?'MGSpriteleft':'MGSpriteleft2'; currentSprite = this.currentWalkFrame===0?this.spriteIdleLeft:this.spriteWalkLeft2; } } else { spriteKey = this.facingDirection === 'right'?'MGSpriteright':'MGSpriteleft'; currentSprite = this.facingDirection === 'right'?this.spriteIdleRight:this.spriteIdleLeft; } }
 
                 if (this.isInvincible) ctx.globalAlpha = (Math.floor(Date.now()/100)%2===0)?0.6:1.0;
-
                 let drewSprite = false;
                 if (currentSprite && currentSprite.complete && currentSprite.naturalHeight !== 0) {
                     try { ctx.drawImage(currentSprite, this.x, this.y, this.width, this.height); drewSprite = true; }
                     catch (e) { console.error("Player:draw Error drawing player sprite:", e, currentSprite); }
                 }
-                if (!drewSprite) { // Fallback drawing for player
-                    ctx.fillStyle = this.fallbackColor;
-                    ctx.fillRect(this.x, this.y, this.width, this.height);
+                if (!drewSprite) {
+                    ctx.fillStyle = this.fallbackColor; ctx.fillRect(this.x, this.y, this.width, this.height);
                     if (spriteKey && !this._spriteMissingLogged[spriteKey]) {
                         console.warn(`Player:draw Fallback for player sprite key "${spriteKey}"`, currentSprite);
                         this._spriteMissingLogged[spriteKey] = true;
                     }
                 }
-                ctx.globalAlpha = 1.0; // Reset globalAlpha
+                ctx.globalAlpha = 1.0;
                 this.projectiles.forEach(p => p.draw(ctx));
             }
             getRect() { return { x: this.x, y: this.y, width: this.width, height: this.height }; }
@@ -641,9 +644,6 @@
         }
 
         // --- Game Class ---
-        /**
-         * Main game class. Manages game state, entities, updates, and rendering.
-         */
         class Game {
             constructor(canvasId) {
                 this.canvas = document.getElementById(canvasId);
@@ -656,36 +656,48 @@
                 this.inputHandler = new InputHandler();
                 this.player = null; this.enemies = []; this.score = 0; this.lastTime = 0;
                 this.animationFrameId = null;
-                this.enemySpawnTimer = 0; this.enemySpawnInterval = 2500; // Initial spawn interval
+                this.enemySpawnTimer = 0; this.enemySpawnInterval = 2500; // ms
                 this.gameLoop = this.gameLoop.bind(this);
                 this.backgroundSprite = null; this.foliageSprite1 = null; this.foliageSprite2 = null;
                 this.foliageX = 0; this.foliageScrollSpeedFactor = 0.3;
-                this.gameState = 'LOADING'; // Initial game state
+                this.gameState = 'LOADING';
                 this.getReadySprite = null; this.goSprite = null;
                 this.gameOverSprite = null; this.playAgainButtonSprite = null;
-                this.preGameMessageTimer = 0; this.getReadyDuration = 2000; this.goDuration = 1000;
+                this.preGameMessageTimer = 0; this.getReadyDuration = 2000; this.goDuration = 1000; // ms
                 this.playAgainButtonRect = null;
                 this.canvas.addEventListener('click', this.handleCanvasClick.bind(this));
 
                 this.boss = null;
-                this.bossSpawnScoreInterval = 1000; // Score needed after last boss to spawn next one
-                this.nextBossSpawnScore = 500;     // Score at which the *first* boss will spawn
+                this.bossSpawnScoreInterval = 1000; this.nextBossSpawnScore = 500;
 
-                // Heart UI properties
-                this.heartSpriteFull = null;
-                this.heartSpriteDamaged = null;
-                this.heartSpriteCritical = null;
-                this.heartSpriteDisplayWidth = 68;  // Desired width for the heart UI on screen
-                this.heartSpriteDisplayHeight = 68; // Desired height for the heart UI on screen
+                this.heartSpriteFull = null; this.heartSpriteDamaged = null; this.heartSpriteCritical = null;
+                this.heartSpriteDisplayWidth = 68; this.heartSpriteDisplayHeight = 68;
 
-                // Pickup related properties
-                this.pickupItems = [];
-                this.plasBoxSprite = null;
-                this.plasBoxDisplayWidth = 70;  // Desired width for the PlasBox pickup on screen
-                this.plasBoxDisplayHeight = 70; // Desired height for the PlasBox pickup on screen
+                this.pickupItems = []; this.plasBoxSprite = null;
+                this.plasBoxDisplayWidth = 70; this.plasBoxDisplayHeight = 70;
 
-                // Background Music
                 this.backgroundMusic = null;
+
+                // NEW: Game Speed Settings
+                this.gameSpeedMultiplier = 1.0; // 1.0 for normal
+                this.turboSpeedMultiplierValue = 1.75; // How much faster turbo is
+                this.setupSpeedControls(); // Initialize event listeners for speed controls
+            }
+
+            // NEW: Setup speed control UI listeners
+            setupSpeedControls() {
+                const speedRadios = document.querySelectorAll('input[name="speedSetting"]');
+                speedRadios.forEach(radio => {
+                    radio.addEventListener('change', (event) => {
+                        if (event.target.value === 'turbo') {
+                            this.gameSpeedMultiplier = this.turboSpeedMultiplierValue;
+                            console.log("Game speed: TURBO (x" + this.gameSpeedMultiplier + ")");
+                        } else {
+                            this.gameSpeedMultiplier = 1.0;
+                            console.log("Game speed: NORMAL (x" + this.gameSpeedMultiplier + ")");
+                        }
+                    });
+                });
             }
 
             handleCanvasClick(event) {
@@ -708,23 +720,17 @@
                     this.player.velocityY = 0; this.player.onGround = true; this.player.facingDirection = 'right';
                     this.player.health = 3; this.player.projectiles = []; this.player.isInvincible = false;
                     this.player.invincibilityTimer = 0; this.player.isMovingHorizontally = false; this.player.currentWalkFrame = 0;
-                    this.player.weaponType = 'default'; // Reset player's weapon
+                    this.player.weaponType = 'default';
                 }
-                this.boss = null;
-                this.nextBossSpawnScore = 500; // Reset for the first boss
-                this.pickupItems = []; // Clear any active pickups
+                this.boss = null; this.nextBossSpawnScore = 500; this.pickupItems = [];
                 console.log("Game: Game reset. Next boss at score:", this.nextBossSpawnScore);
 
-                // Attempt to play background music
                 if (this.backgroundMusic) {
-                    // Ensure music is reset to the beginning if it was already playing
                     this.backgroundMusic.currentTime = 0;
                     const playPromise = this.backgroundMusic.play();
                     if (playPromise !== undefined) {
                         playPromise.catch(error => {
-                            console.warn("Background music autoplay was prevented. It should start after user interaction (e.g., clicking 'Play Again').", error);
-                            // A common practice is to enable music after the first explicit user gesture if autoplay fails.
-                            // For this game, clicking "Play Again" or starting a new game serves this purpose.
+                            console.warn("Background music autoplay was prevented.", error);
                         });
                     }
                 }
@@ -747,14 +753,14 @@
             }
 
             spawnBoss() {
-                if (!this.boss && this.player) { // Only spawn if no current boss
+                if (!this.boss && this.player) {
                     console.log(`Game: Spawning Boss! Current score: ${this.score}, Next boss score: ${this.nextBossSpawnScore}`);
                     this.boss = new Boss(this.canvas.width, this.canvas.height, this.player);
-                    this.enemies = []; // Clear regular enemies when boss appears
+                    this.enemies = [];
                 }
             }
 
-            update(deltaTime) {
+            update(effectiveDeltaTime, timeScaleFactor) { // RENAMED deltaTime, ADDED timeScaleFactor
                 if (!this.player && this.gameState !== 'LOADING' && this.gameState !== 'GAME_OVER') {
                     console.warn("Game: Player not initialized during an active game state:", this.gameState); return;
                 }
@@ -766,40 +772,37 @@
 
                 switch (this.gameState) {
                     case 'PRE_GAME_GET_READY':
-                        this.preGameMessageTimer -= deltaTime;
+                        this.preGameMessageTimer -= effectiveDeltaTime;
                         if (this.preGameMessageTimer <= 0) { this.gameState = 'PRE_GAME_GO'; this.preGameMessageTimer = this.goDuration; }
-                        if (this.player) this.player.updateVisualsOnly(deltaTime);
+                        if (this.player) this.player.updateVisualsOnly(effectiveDeltaTime); // Pass effectiveDeltaTime
                         return;
                     case 'PRE_GAME_GO':
-                        this.preGameMessageTimer -= deltaTime;
+                        this.preGameMessageTimer -= effectiveDeltaTime;
                         if (this.preGameMessageTimer <= 0) { this.gameState = 'RUNNING'; }
-                        if (this.player) this.player.updateVisualsOnly(deltaTime);
+                        if (this.player) this.player.updateVisualsOnly(effectiveDeltaTime); // Pass effectiveDeltaTime
                         return;
                     case 'GAME_OVER': return;
-                    case 'RUNNING': break; // Continue to main game logic
-                    default: return; // Unknown state
+                    case 'RUNNING': break;
+                    default: return;
                 }
 
-                // --- RUNNING STATE LOGIC ---
                 if (this.score >= this.nextBossSpawnScore && !this.boss) {
                     this.spawnBoss();
                 }
 
-                this.player.update(this.inputHandler, deltaTime);
+                this.player.update(this.inputHandler, effectiveDeltaTime, timeScaleFactor); // Pass factors
                 let bossDefeatedThisFrame = false;
 
                 if (this.boss && this.boss.active) {
-                    this.boss.update(deltaTime);
-                    // Player Projectiles vs Boss
+                    this.boss.update(effectiveDeltaTime, timeScaleFactor); // Pass factors
                     this.player.projectiles.forEach(proj => {
                         if (proj.active && AABBCollision(proj.getRect(), this.boss.getRect()) && !this.boss.isDestroyed && !this.boss.isEntering) {
                             proj.active = false; let regularScoreForHit = 25; this.score += regularScoreForHit;
-                            if (this.boss.takeDamage()) { // takeDamage returns true if boss was destroyed
+                            if (this.boss.takeDamage()) {
                                 this.score += (1000 - regularScoreForHit); bossDefeatedThisFrame = true;
                             }
                         }
                     });
-                    // Boss Projectiles vs Player
                     if (!this.player.isInvincible) {
                         this.boss.projectiles.forEach(bossProj => {
                             if (bossProj.active && AABBCollision(bossProj.getRect(), this.player.getRect())) {
@@ -808,7 +811,6 @@
                             }
                         });
                     }
-                    // Player vs Boss Body Collision
                     if (!this.player.isInvincible && AABBCollision(this.player.getRect(), this.boss.getRect()) && !this.boss.isDestroyed && !this.boss.isEntering) {
                         if (this.player.takeDamage() && this.player.health <= 0) { this.gameOver(); }
                     }
@@ -816,7 +818,6 @@
                     if (bossDefeatedThisFrame) {
                         this.nextBossSpawnScore = this.score + this.bossSpawnScoreInterval;
                         console.log("Boss defeated! Next boss will spawn at score:", this.nextBossSpawnScore);
-                        // Spawn PlasBox pickup
                         if (this.plasBoxSprite) {
                             const pickupX = this.boss.x + this.boss.width / 2;
                             const pickupY = this.boss.y + this.boss.height / 2;
@@ -825,11 +826,9 @@
                         } else {
                             console.warn("Game.update: plasBoxSprite not loaded, cannot spawn pickup.");
                         }
-                        // The boss instance will manage its own destruction animation and become inactive.
                     }
-                } else { // No active boss, handle regular enemies
-                    this.enemies.forEach(enemy => enemy.update(deltaTime));
-                    // Player Projectiles vs Enemies
+                } else {
+                    this.enemies.forEach(enemy => enemy.update(effectiveDeltaTime, timeScaleFactor)); // Pass factors
                     this.player.projectiles.forEach(proj => {
                         this.enemies.forEach(enemy => {
                             if (proj.active && enemy.active && !enemy.isExploding && AABBCollision(proj.getRect(), enemy.getRect())) {
@@ -837,61 +836,53 @@
                             }
                         });
                     });
-                    // Player vs Enemy Collision
                     this.enemies.forEach(enemy => {
                         if (enemy.active && !enemy.isExploding && AABBCollision(this.player.getRect(), enemy.getRect())) {
                             if (this.player.takeDamage() && this.player.health <= 0) { this.gameOver(); }
                         }
                     });
 
-                    // Regular enemy spawning (only if no boss is trying to spawn or active)
-                    if (!this.boss) {
-                        this.enemySpawnTimer += deltaTime;
+                    if (!this.boss) { // Regular enemy spawning
+                        this.enemySpawnTimer += effectiveDeltaTime; // Use effectiveDeltaTime
                         if (this.enemySpawnTimer >= this.enemySpawnInterval) {
-                            if (this.enemies.length < 8) this.spawnEnemy(); // Limit max enemies
+                            if (this.enemies.length < 8) this.spawnEnemy();
                             this.enemySpawnTimer = 0;
-                            if (this.enemySpawnInterval > 800) this.enemySpawnInterval -= 20; // Increase spawn rate over time
+                            if (this.enemySpawnInterval > 800) this.enemySpawnInterval -= 20;
                         }
                     }
                 }
 
-                // Update and handle pickup items
                 for (let i = this.pickupItems.length - 1; i >= 0; i--) {
                     const pickup = this.pickupItems[i];
-                    pickup.update(deltaTime);
+                    pickup.update(effectiveDeltaTime); // Only needs effectiveDeltaTime
                     if (!pickup.active) {
-                        this.pickupItems.splice(i, 1); // Remove inactive pickups
-                        continue;
+                        this.pickupItems.splice(i, 1); continue;
                     }
-                    // Check for player collision with pickup
                     if (this.player && AABBCollision(this.player.getRect(), pickup.getRect())) {
                         if (pickup.type === 'plasma_weapon') {
                             this.player.weaponType = 'plasma';
                             console.log("Player picked up Plasma Weapon!");
                         }
-                        pickup.active = false; // Deactivate pickup after collection
+                        pickup.active = false;
                     }
                 }
 
-                // Filter active entities
                 this.player.projectiles = this.player.projectiles.filter(p => p.active);
                 if (this.boss) this.boss.projectiles = this.boss.projectiles.filter(p => p.active);
                 this.enemies = this.enemies.filter(e => e.active);
 
-                // If boss instance exists but became inactive (e.g., after destruction animation and not just defeated)
                 if (this.boss && !this.boss.active && !bossDefeatedThisFrame) {
                     this.boss = null;
                 }
 
-                // Parallax scrolling for foliage
                 if (this.player.playerMovedX !== 0 && this.foliageSprite1 && this.foliageSprite2) {
-                    this.foliageX -= this.player.playerMovedX * this.foliageScrollSpeedFactor;
+                    this.foliageX -= this.player.playerMovedX * this.foliageScrollSpeedFactor; // playerMovedX is already scaled by timeScaleFactor inside Player.update
                     const combinedFoliageWidth = (this.foliageSprite1.width || 0) + (this.foliageSprite2.width || 0);
                     if (combinedFoliageWidth > 0) {
-                        this.foliageX %= combinedFoliageWidth; // Loop the foliage position
+                        this.foliageX %= combinedFoliageWidth;
                     }
                 }
-                this.player.playerMovedX = 0; // Reset player movement tracker for foliage
+                this.player.playerMovedX = 0;
             }
 
             drawPlayerHealth() {
@@ -902,24 +893,22 @@
                 } else if (this.player.health === 1) { currentHeartSprite = this.heartSpriteCritical; }
 
                 if (currentHeartSprite && currentHeartSprite.complete && currentHeartSprite.naturalHeight !== 0) {
-                    const heartX = this.canvas.width - this.heartSpriteDisplayWidth - 20; // Position from right
-                    const heartY = 10; // Position from top
+                    const heartX = this.canvas.width - this.heartSpriteDisplayWidth - 20;
+                    const heartY = 10;
                     this.ctx.drawImage(currentHeartSprite, heartX, heartY, this.heartSpriteDisplayWidth, this.heartSpriteDisplayHeight);
-                } else if (this.player.health > 0) { // Fallback if sprites are missing
+                } else if (this.player.health > 0) {
                     this.ctx.fillStyle = 'white'; this.ctx.font = '18px "Press Start 2P"';
                     this.ctx.textAlign = 'right'; this.ctx.fillText(`HP: ${this.player.health}`, this.canvas.width - 20, 30);
-                    if (!currentHeartSprite) { console.warn(`Game.drawPlayerHealth: No heart sprite determined for health state ${this.player.health}.`);
-                    } else { console.warn(`Game.drawPlayerHealth: Heart sprite for health state ${this.player.health} (${currentHeartSprite.src}) is not loaded or broken.`); }
+                    if (!currentHeartSprite) { console.warn(`Game.drawPlayerHealth: No heart sprite for health ${this.player.health}.`);
+                    } else { console.warn(`Game.drawPlayerHealth: Heart sprite for health ${this.player.health} (${currentHeartSprite.src}) not loaded.`); }
                 }
             }
 
             draw() {
-                // Draw background
                 if (this.backgroundSprite && this.backgroundSprite.complete && this.backgroundSprite.naturalHeight !== 0) {
                     this.ctx.drawImage(this.backgroundSprite, 0, 0, this.canvas.width, this.canvas.height);
                 } else { this.ctx.fillStyle = '#2c3e50'; this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height); }
 
-                // Draw parallax foliage
                 const f1W = this.foliageSprite1 ? this.foliageSprite1.width : 0;
                 const f2W = this.foliageSprite2 ? this.foliageSprite2.width : 0;
                 const combinedFoliageWidth = f1W + f2W;
@@ -927,26 +916,20 @@
                     this.foliageSprite2 && this.foliageSprite2.complete && this.foliageSprite2.naturalHeight !== 0 &&
                     combinedFoliageWidth > 0) {
                     let startX = this.foliageX % combinedFoliageWidth;
-                    if (startX > 0) startX -= combinedFoliageWidth; // Ensure seamless loop to the left
+                    if (startX > 0) startX -= combinedFoliageWidth;
                     for (let currentX = startX; currentX < this.canvas.width; currentX += combinedFoliageWidth) {
                         if (f1W > 0) this.ctx.drawImage(this.foliageSprite1, currentX, 0, f1W, this.canvas.height);
                         if (f2W > 0) this.ctx.drawImage(this.foliageSprite2, currentX + f1W, 0, f2W, this.canvas.height);
                     }
                 }
-                // Draw ground
                 this.ctx.fillStyle = '#7f8c8d'; this.ctx.fillRect(0, this.canvas.height - 10, this.canvas.width, 10);
-
-                // Draw pickup items
                 this.pickupItems.forEach(pickup => pickup.draw(this.ctx));
-
-                // Draw player
                 if (this.player) { this.player.draw(this.ctx);
-                } else if (this.gameState !== 'LOADING' && this.gameState !== 'GAME_OVER') { // Fallback if player not ready
+                } else if (this.gameState !== 'LOADING' && this.gameState !== 'GAME_OVER') {
                     this.ctx.fillStyle='white'; this.ctx.font='20px "Press Start 2P"';
                     this.ctx.textAlign='center'; this.ctx.fillText('Initializing Player...', this.canvas.width/2, this.canvas.height/2);
                 }
 
-                // Draw based on game state
                 switch (this.gameState) {
                     case 'PRE_GAME_GET_READY':
                         if(this.getReadySprite && this.getReadySprite.complete && this.getReadySprite.naturalHeight!==0){
@@ -963,14 +946,11 @@
                     case 'RUNNING':
                         this.enemies.forEach(enemy=>enemy.draw(this.ctx));
                         if(this.boss && this.boss.active) { this.boss.draw(this.ctx); }
-                        // UI Elements
                         this.ctx.fillStyle='white'; this.ctx.font='20px "Press Start 2P"';
                         this.ctx.textAlign='left'; this.ctx.fillText(`Score: ${this.score}`,20,30);
                         this.drawPlayerHealth();
                         break;
-                    case 'GAME_OVER':
-                        this.drawGameOverScreen();
-                        break;
+                    case 'GAME_OVER': this.drawGameOverScreen(); break;
                 }
             }
 
@@ -986,89 +966,72 @@
                     const sX=(this.canvas.width-nW)/2;
                     this.ctx.drawImage(this.gameOverSprite,sX,currentY,nW,nH);
                     currentY+=nH+vertPaddingTitle;
-                } else { // Fallback for Game Over title
+                } else {
                     this.ctx.font='30px "Press Start 2P"'; this.ctx.fillStyle='#E74C3C'; this.ctx.textAlign='center';
                     const tM=this.ctx.measureText('GAME OVER');
                     const tH=(tM.actualBoundingBoxAscent+tM.actualBoundingBoxDescent)||30;
                     this.ctx.fillText('GAME OVER',this.canvas.width/2,currentY+tH/2);
                     currentY+=tH+vertPaddingTitle;
                 }
-                // Final Score
                 this.ctx.font=`${scoreFontSize}px "Press Start 2P"`; this.ctx.fillStyle='white'; this.ctx.textAlign='center';
                 const scoreText=`Final Score: ${this.score}`; const scoreTextHeight=scoreFontSize*1.2;
                 this.ctx.fillText(scoreText,this.canvas.width/2,currentY+scoreTextHeight/2);
                 currentY+=scoreTextHeight+vertPaddingScore;
 
-                // Play Again Button
                 if(this.playAgainButtonSprite && this.playAgainButtonSprite.complete && this.playAgainButtonSprite.naturalHeight!==0){
                     const bOW=this.playAgainButtonSprite.width; const bOH=this.playAgainButtonSprite.height;
                     const nBW=bOW*buttonScale; const nBH=bOH*buttonScale;
                     const bX=(this.canvas.width-nBW)/2; const bY=currentY;
                     this.ctx.drawImage(this.playAgainButtonSprite,bX,bY,nBW,nBH);
                     this.playAgainButtonRect={x:bX,y:bY,width:nBW,height:nBH};
-                } else { // Fallback for Play Again button
+                } else {
                     this.ctx.font='16px "Press Start 2P"';
                     this.ctx.fillText('Refresh to Play Again',this.canvas.width/2,currentY+(16*0.6));
                     this.playAgainButtonRect=null;
                 }
             }
 
-            gameOver() {
-                this.gameState = 'GAME_OVER';
-                console.log("Game: Game Over.");
-                // Optionally pause music on game over, or let it continue
-                // if (this.backgroundMusic) {
-                //     this.backgroundMusic.pause();
-                // }
-            }
+            gameOver() { this.gameState = 'GAME_OVER'; console.log("Game: Game Over."); }
 
             gameLoop(timestamp) {
-                const deltaTime = (timestamp - (this.lastTime || timestamp)) || (1000/60); // Calculate delta time, fallback to ~60fps if first frame
+                const actualDeltaTime = (timestamp - (this.lastTime || timestamp)) || NORMAL_FRAME_DURATION_MS;
                 this.lastTime = timestamp;
-                this.update(deltaTime);
+
+                const effectiveDeltaTime = actualDeltaTime * this.gameSpeedMultiplier;
+                // timeScaleFactor is how many "normal frames" have passed in this effectiveDeltaTime
+                const timeScaleFactor = effectiveDeltaTime / NORMAL_FRAME_DURATION_MS;
+
+                this.update(effectiveDeltaTime, timeScaleFactor); // Pass both factors
                 this.draw();
                 this.animationFrameId = requestAnimationFrame(this.gameLoop);
             }
 
             async initAndStart() {
                 console.log("Game: Starting asset loading phase."); this.gameState = 'LOADING';
-                // Player assets
                 assetManager.loadImage('MGSpriteleft', 'MGSpriteleft.png'); assetManager.loadImage('MGSpriteright', 'MGSpriteright.png');
                 assetManager.loadImage('MGSpriteleft2', 'MGSpriteleft2.png'); assetManager.loadImage('MGSpriteright2', 'MGSpriteright2.png');
                 assetManager.loadImage('JumpLeft', 'JumpLeft.png'); assetManager.loadImage('JumpRight', 'JumpRight.png');
                 assetManager.loadImage('DuckLeft', 'DuckLeft.png'); assetManager.loadImage('DuckRight', 'DuckRight.png');
-                // Enemy assets
                 assetManager.loadImage('leftEnemyWalk1', 'leftenemy1.png'); assetManager.loadImage('leftEnemyWalk2', 'leftenemy2.png');
                 assetManager.loadImage('leftEnemyExplosion', 'leftenemy3.png'); assetManager.loadImage('rightEnemyWalk1', 'rightenemy1.png');
                 assetManager.loadImage('rightEnemyWalk2', 'rightenemy2.png'); assetManager.loadImage('rightEnemyExplosion', 'rightenemy3.png');
-                // Flying enemy assets
                 assetManager.loadImage('Robo1', 'Robo1.png'); assetManager.loadImage('Robo2', 'Robo2.png');
                 assetManager.loadImage('Robo3', 'Robo3.png'); assetManager.loadImage('Robo4', 'Robo4.png');
                 assetManager.loadImage('Robo1 copy', 'Robo1 copy.png'); assetManager.loadImage('Robo2 copy', 'Robo2 copy.png');
                 assetManager.loadImage('Robo3 copy', 'Robo3 copy.png'); assetManager.loadImage('Robo4 copy', 'Robo4 copy.png');
                 assetManager.loadImage('RoboPOP', 'RoboPOP.png');
-                // Environment assets
                 assetManager.loadImage('background', 'SettingSun.png'); assetManager.loadImage('foliage1', 'foliage1.png'); assetManager.loadImage('foliage2', 'foliage2.png');
-                // UI and Game State assets
                 assetManager.loadImage('getReady', 'GETREADY.png'); assetManager.loadImage('go', 'GO.png');
                 assetManager.loadImage('gameOverTitle', 'GAMEOVER.png'); assetManager.loadImage('playAgainButton', 'PLAYAGAIN.png');
-                // Boss assets
-                assetManager.loadImage('BOSS1', 'BOSS1.png'); assetManager.loadImage('BOSS1R', 'BOSS1R.png');
-                assetManager.loadImage('BOSS2', 'BOSS2.png'); assetManager.loadImage('BOSS2R', 'BOSS2R.png');
-                assetManager.loadImage('BOSS3', 'BOSS3.png'); assetManager.loadImage('BOSS3R', 'BOSS3R.png');
-                assetManager.loadImage('BOSS4', 'BOSS4.png'); assetManager.loadImage('BOSS4R', 'BOSS4R.png');
-                // Heart UI assets
-                assetManager.loadImage('heartFull', 'HEARTONE.png');
-                assetManager.loadImage('heartDamaged', 'HEARTTWO.png');
+                assetManager.loadImage('BOSS1R', 'BOSS1R.png'); assetManager.loadImage('BOSS2R', 'BOSS2R.png');
+                assetManager.loadImage('BOSS3R', 'BOSS3R.png'); assetManager.loadImage('BOSS4R', 'BOSS4R.png');
+                assetManager.loadImage('heartFull', 'HEARTONE.png'); assetManager.loadImage('heartDamaged', 'HEARTTWO.png');
                 assetManager.loadImage('heartCritical', 'HEARTTHREE.png');
-                // Plasma weapon assets
-                assetManager.loadImage('plasBox', 'PlasBox.png');
-                assetManager.loadImage('plasBulLeft', 'PlasBul.png');
+                assetManager.loadImage('plasBox', 'PlasBox.png'); assetManager.loadImage('plasBulLeft', 'PlasBul.png');
                 assetManager.loadImage('plasBulRight', 'PlasBulRight.png');
 
                 try {
                     await assetManager.loadAll(); console.log("Game: Asset loading complete.");
-                    // Assign loaded images to game properties
                     this.backgroundSprite = assetManager.getImage('background');
                     this.foliageSprite1 = assetManager.getImage('foliage1');
                     this.foliageSprite2 = assetManager.getImage('foliage2');
@@ -1080,31 +1043,26 @@
                     this.heartSpriteDamaged = assetManager.getImage('heartDamaged');
                     this.heartSpriteCritical = assetManager.getImage('heartCritical');
                     this.plasBoxSprite = assetManager.getImage('plasBox');
-
                     if (!this.backgroundSprite) console.warn("Game: Background sprite 'SettingSun.png' not loaded!");
 
-                    // Initialize Background Music
                     try {
                         this.backgroundMusic = new Audio('melancholic-classical-music-longing-heart-326205.mp3');
-                        this.backgroundMusic.loop = true;
-                        this.backgroundMusic.volume = 0.3; // Adjust volume as needed (0.0 to 1.0)
-                        console.log("Game: Background music object created and configured.");
-                        // Note: Music play is attempted in resetGame() which is called after init
+                        this.backgroundMusic.loop = true; this.backgroundMusic.volume = 0.3;
+                        console.log("Game: Background music object created.");
                     } catch (e) {
                         console.error("Game: Error creating Audio object for background music.", e);
-                        this.backgroundMusic = null; // Ensure it's null if creation failed
+                        this.backgroundMusic = null;
                     }
 
                 } catch (err) {
                     console.error("Game: Critical error loading assets:", err);
-                    this.gameState = 'ERROR_LOADING'; // Display error state if assets fail
-                    return;
+                    this.gameState = 'ERROR_LOADING'; return;
                 }
 
                 this.player = new Player(this.canvas.width, this.canvas.height); console.log("Game: Player initialized.");
-                this.resetGame(); // Set initial game state, reset values, and attempt to play music
-                if (this.animationFrameId) cancelAnimationFrame(this.animationFrameId); // Clear previous loop if any
-                this.lastTime = 0; // Reset lastTime for deltaTime calculation
+                this.resetGame();
+                if (this.animationFrameId) cancelAnimationFrame(this.animationFrameId);
+                this.lastTime = 0;
                 console.log("Game: Starting game loop.");
                 this.animationFrameId = requestAnimationFrame(this.gameLoop);
             }
@@ -1116,13 +1074,13 @@
             try {
                 const game = new Game('gameCanvas');
                 console.log("Script: Game instance created. Calling initAndStart...");
-                game.initAndStart().catch(err => { // Catch potential async errors from initAndStart
+                game.initAndStart().catch(err => {
                     console.error("Script: FATAL - Failed to initialize and start game (async error):", err);
                     const loadingMessageEl = document.getElementById('loadingMessage');
                     if (loadingMessageEl) loadingMessageEl.textContent = "FATAL ERROR starting game. Check console.";
                     else alert("FATAL ERROR starting game. Check console.");
                 });
-            } catch (e) { // Catch potential sync errors from Game constructor
+            } catch (e) {
                 console.error("Script: FATAL - Error creating Game instance (sync error):", e);
                 const loadingMessageEl = document.getElementById('loadingMessage');
                 if (loadingMessageEl) loadingMessageEl.textContent = "Critical error creating game instance. Check console.";
